@@ -39,6 +39,17 @@ export type LayoverRest = {
 };
 
 /**
+ * Below this much free time, a stop on the ground is transit, not a layover.
+ *
+ * Set by what the panel is FOR: somewhere to go and time to get there. EK247 stops at Rio for
+ * two hours on the way to Buenos Aires and the first version called that a layover, then
+ * offered "5m free until report" and a city guide for a city she never leaves the airport of.
+ * Six hours is the point where leaving is worth the trip in and out — a product judgement, not
+ * a regulation, and the one number to change if it reads wrong in use.
+ */
+export const MIN_LAYOVER_FREE_HOURS = 6;
+
+/**
  * Every ground rest away from base, ordered by arrival.
  *
  * Two guards, both because a roster is only ever partly known:
@@ -66,6 +77,8 @@ export function layoverRests(trips: readonly TripLike[], base: string): LayoverR
     const departsMs = Date.parse(outbound.depUtc);
     if (!Number.isFinite(arrivedMs) || !Number.isFinite(reportMs)) continue;
     if (reportMs <= arrivedMs) continue;
+    const freeHours = (reportMs - arrivedMs) / 3_600_000;
+    if (freeHours < MIN_LAYOVER_FREE_HOURS) continue;
 
     rests.push({
       station: inbound.dest,
@@ -77,7 +90,7 @@ export function layoverRests(trips: readonly TripLike[], base: string): LayoverR
       nextDepUtc: outbound.depUtc,
       nextDepTz: outbound.depTz,
       hours: (departsMs - arrivedMs) / 3_600_000,
-      freeHours: (reportMs - arrivedMs) / 3_600_000,
+      freeHours,
       clockShift: clockShiftHours(inbound.depUtc, inbound.depTz, inbound.arrUtc, inbound.arrTz),
     });
   }
