@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatLayoverBrief, layoverRests, restForDay } from "./layoverBrief";
+import {
+  MIN_LAYOVER_FREE_HOURS,
+  formatLayoverBrief,
+  layoverRests,
+  restForDay,
+} from "./layoverBrief";
 
 const BASE = "DXB";
 const HOME_TZ = "Asia/Dubai";
@@ -114,6 +119,42 @@ describe("layoverRests", () => {
       ],
     };
     expect(layoverRests([OUT, elsewhere], BASE)).toEqual([]);
+  });
+
+  it("does not call a transit stop a layover", () => {
+    // The real one: EK247 stops at Rio for about two hours on the way to Buenos Aires. It was
+    // offered as "Layover · Rio de Janeiro — 5m free until report", with a city guide for a
+    // city she never leaves the airport of.
+    const VIA_GIG = {
+      flights: [
+        leg(
+          "EK247",
+          "DXB",
+          "GIG",
+          "2026-08-22T04:05:00.000Z",
+          "2026-08-22T15:50:00.000Z",
+          "2026-08-22T02:35:00.000Z",
+          "Asia/Dubai",
+          "America/Sao_Paulo",
+        ),
+        leg(
+          "EK247",
+          "GIG",
+          "EZE",
+          "2026-08-22T17:25:00.000Z",
+          "2026-08-22T20:50:00.000Z",
+          "2026-08-22T15:55:00.000Z",
+          "America/Sao_Paulo",
+          "America/Argentina/Buenos_Aires",
+        ),
+      ],
+    };
+    expect(layoverRests([VIA_GIG], BASE)).toEqual([]);
+  });
+
+  it("keeps a rest that clears the threshold", () => {
+    const [rest] = layoverRests([OUT, BACK], BASE);
+    expect(rest!.freeHours).toBeGreaterThanOrEqual(MIN_LAYOVER_FREE_HOURS);
   });
 
   it("skips a rest whose report falls before the landing", () => {

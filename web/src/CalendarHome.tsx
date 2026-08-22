@@ -15,10 +15,12 @@ import type { TripWithFlights } from "./api";
 import type { CrewMember } from "@danyeowa/shared";
 import AddTripForm from "./AddTripForm";
 import CrewBadges from "./CrewBadges";
+import { WeatherGlyph } from "./WeatherGlyph";
 import { digitsOf, getAirlinePrefix } from "./lib/airlinePrefix";
 import { useAirport } from "./lib/airports";
 import { CopyLayoverBrief } from "./CopyLayoverBrief";
 import { humanDateLabel } from "./lib/dateLabel";
+import { MIN_LAYOVER_FREE_HOURS } from "./lib/layoverBrief";
 import { useDestinationSky, type Sky } from "./lib/useSky";
 import { HOME_BASE_IATA } from "./lib/homeBase";
 import { layoverRests, restForDay, type LayoverRest } from "./lib/layoverBrief";
@@ -89,12 +91,17 @@ function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
   legs.forEach((leg, index) => {
     if (index > 0) {
       const prevLeg = legs[index - 1]!;
+      // Transit and layover are different days of her life, so they get different words. A
+      // two-hour stop at Rio on the way to Buenos Aires is not somewhere she goes; the same
+      // row used to call it a layover, next to a "5m free until report" card and a city guide.
+      const ground = layoverHours(prevLeg.arrUtc, leg.depUtc);
+      const isTransit = ground < MIN_LAYOVER_FREE_HOURS;
       rows.push({
         key: `layover-${leg.id}`,
-        time: formatHours(layoverHours(prevLeg.arrUtc, leg.depUtc)),
-        icon: "·",
+        time: formatHours(ground),
+        icon: isTransit ? "◦" : "·",
         iconTone: "text-ink-muted",
-        label: `Layover · ${prevLeg.dest}`,
+        label: `${isTransit ? "Transit" : "Layover"} · ${prevLeg.dest}`,
       });
     }
     rows.push({
@@ -198,6 +205,14 @@ function TripSummaryLines({
     (stop, index, all) => index === 0 || stop !== all[index - 1],
   );
   const arrOffset = dayOffset(firstLeg.depUtc, lastLeg.arrUtc, firstLeg.depTz, lastLeg.arrTz);
+  // Out of base and back on the same local day: a turnaround. Worth naming, because on the card
+  // it otherwise reads as an ordinary duty with an odd route chain — and the ground time at the
+  // outstation is transit, which the timeline now says too.
+  const isTurnaround =
+    firstLeg.origin === HOME_BASE_IATA &&
+    lastLeg.dest === HOME_BASE_IATA &&
+    localDateKey(firstLeg.depUtc, firstLeg.depTz) === localDateKey(lastLeg.arrUtc, lastLeg.arrTz);
+
   // Length only earns a place on a pairing that actually spans days — "1 day" is noise.
   const tripDays = new Set(legs.map((leg) => formatLocal(leg.depUtc, leg.depTz, { withDate: true }).slice(0, 6)))
     .size;
@@ -214,13 +229,20 @@ function TripSummaryLines({
           <p className="text-sm text-ink-muted">
             {firstLeg.flightNo} · {depDate}
             {tripDays > 1 && ` · ${tripDays} days`}
+            {isTurnaround && " · turnaround"}
           </p>
           {sky && (
             // Third line rather than a right-hand column: the corner controls already live
             // there, and two right-aligned blocks collide at 390px.
-            <p data-testid="card-sky" className="num text-sm text-ink-muted">
-              {Math.round(sky.day.tempMinC)}–{Math.round(sky.day.tempMaxC)}° · {sky.day.label}
-              {sky.day.rainChance != null && ` · rain ${sky.day.rainChance}%`}
+            <p
+              data-testid="card-sky"
+              className="num flex items-center gap-1.5 text-sm text-ink-muted"
+            >
+              <WeatherGlyph kind={sky.kind} />
+              <span>
+                {Math.round(sky.day.tempMinC)}–{Math.round(sky.day.tempMaxC)}° · {sky.day.label}
+                {sky.day.rainChance != null && ` · rain ${sky.day.rainChance}%`}
+              </span>
             </p>
           )}
         </div>
@@ -265,6 +287,7 @@ function DayDetailCard({
   isoDate,
   trip,
   homeTz,
+  layoverRest,
   onAdded,
   onChanged,
   readOnly = false,
@@ -272,6 +295,10 @@ function DayDetailCard({
   isoDate: string;
   trip: TripWithFlights | null;
   homeTz: string;
+  /** The down-route rest this day falls inside, rendered inside this card rather than beside
+   * it: the rest belongs to the flight that created it, and two stacked cards made the day
+   * read as two separate things. */
+  layoverRest?: LayoverRest | null;
   /** Marks the day optimistically on the calendar grid ahead of the parent's refetch. */
   onAdded: (isoDate: string) => void;
   onChanged: () => void;
@@ -370,6 +397,9 @@ function DayDetailCard({
     return (
       <div data-testid="day-detail-card" className="hairline flex flex-col gap-3 rounded-lg border border-edge bg-card p-4">
         <p className="text-sm text-ink-muted">{humanDateLabel(isoDate, homeTz)} — no duty</p>
+        {/* The day in the middle of a layover: no duty, and the one she is most likely to be
+            planning. "No duty" alone is true and useless here. */}
+        {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
         {readOnly ? null : (
         <AddTripForm
           key={`${isoDate}-${addFormKey}`}
@@ -555,6 +585,10 @@ function DayDetailCard({
           </form>
         </div>
       )}
+
+      {/* Inside the card, not beside it: the rest belongs to the flight that created it, and
+          two stacked cards made one day read as two separate things. */}
+      {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
     </div>
   );
 }
@@ -601,32 +635,31 @@ function DayDetail({
           isoDate={isoDate}
           trip={null}
           homeTz={homeTz}
+          layoverRest={layoverRest}
           onAdded={onAdded}
           onChanged={onChanged}
           readOnly={readOnly}
         />
-        {/* The day in the middle of a layover: no duty, and the one she is most likely to be
-            planning. "No duty" alone is true and useless here. */}
-        {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
       </div>
     );
   }
 
   return (
     <div data-testid="day-detail" className="flex flex-col gap-3">
-      {trips.map((trip) => (
+      {trips.map((trip, index) => (
         <DayDetailCard
           key={trip.id}
           isoDate={isoDate}
           trip={trip}
           homeTz={homeTz}
+          // First card only: a day with a morning turnaround and an evening standby is two
+          // cards, and the rest they share must not be printed on both.
+          layoverRest={index === 0 ? layoverRest : null}
           onAdded={onAdded}
           onChanged={onChanged}
           readOnly={readOnly}
         />
       ))}
-
-      {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
 
       {readOnly ? null : addingAnother ? (
         <div className="hairline flex flex-col gap-3 rounded-lg border border-edge bg-card p-4">
@@ -778,6 +811,25 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
     if (!trips) return null;
     return restForDay(layoverRests(trips, HOME_BASE_IATA), iso, homeTz);
   }
+
+  // The next duty's final destination, resolved here rather than beside the preview card
+  // because it drives a hook and the card sits past two early returns.
+  const previewLastLeg = (() => {
+    if (!trips) return null;
+    const next = trips
+      .flatMap((trip) => trip.flights)
+      .filter((leg) => Date.parse(leg.arrUtc) >= nowMs)
+      .sort((a, b) => Date.parse(a.depUtc) - Date.parse(b.depUtc))[0];
+    if (!next) return null;
+    const owning = trips.find((trip) => trip.flights.some((leg) => leg.id === next.id));
+    const ordered = owning ? [...owning.flights].sort((a, b) => a.legSeq - b.legSeq) : [next];
+    return ordered[ordered.length - 1] ?? null;
+  })();
+  const nextDutySky = useDestinationSky(
+    previewLastLeg?.dest ?? "",
+    previewLastLeg?.arrUtc ?? "",
+    previewLastLeg?.arrTz ?? "UTC",
+  );
 
   // Selects today, or the next trip-free day after today when today already has a trip — used
   // by the tab bar's center + button. Tracks the LAST SEEN token (initialized to the current
@@ -956,7 +1008,7 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
           onClick={() => setSelectedIso(localDateKey(firstLeg.depUtc, firstLeg.depTz))}
           className="hairline stagger-2 flex flex-col gap-1 rounded-lg border border-edge bg-card p-4 text-left transition-colors duration-[120ms] hover:bg-raised"
         >
-          <TripSummaryLines legs={legs} />
+          <TripSummaryLines legs={legs} sky={nextDutySky} showTimeline />
         </button>
       )}
     </div>

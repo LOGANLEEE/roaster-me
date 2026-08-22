@@ -98,6 +98,51 @@ const secondDutySameDay: TripWithFlights = {
   ],
 };
 
+// A real turnaround: out of base and back the same local day, with a short stop at the
+// outstation. DXB 09:00 -> BAH 09:10, back BAH 11:00 -> DXB 13:10 (all local).
+const turnaroundTrip: TripWithFlights = {
+  id: "trip-ta",
+  userId: "u1",
+  label: null,
+  createdAt: now.getTime(),
+  flights: [
+    {
+      id: "ta1",
+      tripId: "trip-ta",
+      userId: "u1",
+      flightNo: "EK837",
+      origin: "DXB",
+      dest: "BAH",
+      depUtc: "2026-08-14T05:00:00.000Z",
+      arrUtc: "2026-08-14T06:10:00.000Z",
+      reportUtc: "2026-08-14T03:30:00.000Z",
+      depTz: "Asia/Dubai",
+      arrTz: "Asia/Bahrain",
+      source: "manual",
+      notes: null,
+      legSeq: 0,
+      operating: true,
+    },
+    {
+      id: "ta2",
+      tripId: "trip-ta",
+      userId: "u1",
+      flightNo: "EK838",
+      origin: "BAH",
+      dest: "DXB",
+      depUtc: "2026-08-14T08:00:00.000Z",
+      arrUtc: "2026-08-14T09:10:00.000Z",
+      reportUtc: "2026-08-14T06:30:00.000Z",
+      depTz: "Asia/Bahrain",
+      arrTz: "Asia/Dubai",
+      source: "manual",
+      notes: null,
+      legSeq: 1,
+      operating: true,
+    },
+  ],
+};
+
 // 3-day DXB->AKL->DXB trip, home base Asia/Dubai (origin of the first leg).
 // first dep 2026-08-10 02:15 Dubai local; last arr 2026-08-12 18:00 Dubai local.
 const inProgressTrip: TripWithFlights = {
@@ -199,7 +244,10 @@ describe("CalendarHome", () => {
     expect(card).toHaveTextContent("16:20"); // arr: lastLeg.arrUtc in Pacific/Auckland
     expect(card).toHaveTextContent("+1"); // arrival lands a calendar day later
     expect(card).toHaveTextContent("1d 2h"); // elapsed time, kept from the old sector rail
-    expect(card).not.toHaveTextContent(/leave home/i);
+    // The preview carries the timeline too. It used to stop at the board rows, which is what
+    // "day 22 renders without details" was: the home screen showed a route and three times,
+    // and everything else was one tap away with nothing on screen saying so.
+    expect(card).toHaveTextContent(/leave home/i);
   });
 
   it("shows the calendar skeleton while trips are loading, then replaces it once they resolve", async () => {
@@ -687,10 +735,30 @@ describe("CalendarHome", () => {
 
       const timeline = await screen.findByTestId("duty-timeline");
       // layoverHours(leg0.arrUtc 13:35Z, leg1.depUtc 16:00Z) = ~2.4h, rounded to 2h by formatHours.
-      expect(timeline).toHaveTextContent("Layover · SIN");
+      // Under MIN_LAYOVER_FREE_HOURS, so it is TRANSIT, not a layover — she does not leave the
+      // airport at Singapore on the way to Auckland, and calling it a layover put a city guide
+      // and "5m free until report" on a stop she never walks out of.
+      expect(timeline).toHaveTextContent("Transit · SIN");
+      expect(timeline).not.toHaveTextContent("Layover · SIN");
       expect(timeline).toHaveTextContent("2h");
       expect(screen.getAllByText("Departs")).toHaveLength(2);
       expect(screen.getAllByText("Lands")).toHaveLength(2);
+    });
+
+    it("names a turnaround, and calls its ground stop transit rather than a layover", async () => {
+      vi.mocked(getTrips).mockResolvedValue([turnaroundTrip]);
+      vi.mocked(getAirport).mockResolvedValue(null);
+      const user = userEvent.setup();
+
+      render(<CalendarHome now={now} />);
+      await user.click(await screen.findByTestId("calendar-day-2026-08-14"));
+
+      const card = await screen.findByTestId("day-detail-card");
+      expect(card).toHaveTextContent("DXB → BAH → DXB");
+      expect(card).toHaveTextContent("turnaround");
+      // 1h50m on the ground — she does not leave the airport, so no layover and no rest panel.
+      expect(await screen.findByTestId("duty-timeline")).toHaveTextContent("Transit · BAH");
+      expect(screen.queryByTestId("layover-brief")).not.toBeInTheDocument();
     });
 
     it("shows the bare IATA code until getAirport resolves, then the resolved city, without blocking the timeline's first paint", async () => {

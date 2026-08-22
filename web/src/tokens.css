@@ -329,3 +329,46 @@ body {
 .sky .text-report { color: var(--color-report-on-sky); }
 .sky .border-edge { border-color: rgba(255, 255, 255, 0.14); }
 .sky .divide-edge > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255, 255, 255, 0.14); }
+
+/* Weather glyph motion (WeatherGlyph.tsx).
+ *
+ * Entirely inside prefers-reduced-motion: no-preference — under reduced motion the glyph keeps
+ * every stroke and simply stops moving, rather than disappearing. Only `transform` and
+ * `opacity` on small nodes: the card's own field is never animated, which would repaint the
+ * whole surface every frame.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .wx-drops > *,
+  .wx-flakes > * {
+    animation: wx-fall 1.6s linear infinite;
+  }
+  .wx-flakes > * {
+    animation-duration: 3s;
+  }
+  .wx-d2,
+  .wx-f2 { animation-delay: 0.53s; }
+  .wx-d3,
+  .wx-f3 { animation-delay: 1.06s; }
+
+  .wx-drift { animation: wx-drift 6s ease-in-out infinite alternate; }
+  .wx-rays { animation: wx-rays 9s linear infinite; transform-origin: 12px 12px; }
+  .wx-bolt { animation: wx-flash 4s steps(1, end) infinite; }
+}
+
+@keyframes wx-fall {
+  0% { transform: translateY(-3px); opacity: 0; }
+  25% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: translateY(3px); opacity: 0; }
+}
+@keyframes wx-drift {
+  from { transform: translateX(-1.2px); }
+  to { transform: translateX(1.2px); }
+}
+@keyframes wx-rays {
+  to { transform: rotate(360deg); }
+}
+@keyframes wx-flash {
+  0%, 88%, 100% { opacity: 0.25; }
+  90%, 94% { opacity: 1; }
+}

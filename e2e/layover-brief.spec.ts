@@ -67,6 +67,8 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
 
   const panel = page.getByTestId("layover-brief");
   await expect(panel).toBeVisible();
+  // Inside the day card, not stacked beside it — one day should read as one thing.
+  await expect(page.getByTestId("day-detail-card").getByTestId("layover-brief")).toBeVisible();
   // The header shows the resolved city; the bare IATA is only the fallback before it lands.
   await expect(panel).toContainText("Layover · Sydney");
 
@@ -187,6 +189,15 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
   });
   expect(onSky.report, "report time must use --color-report-on-sky").toBe("rgb(255, 213, 126)");
   expect(onSky.muted, "muted text must use --color-ink-muted-on-sky").toBe("rgb(154, 163, 181)");
+
+  // --- The weather mark moves, so it can be spotted rather than read past. ---
+  const glyph = card.locator("svg[data-wx]");
+  await expect(glyph).toHaveAttribute("data-wx", "storm");
+  const running = await glyph.evaluate((el) => {
+    const drop = el.querySelector(".wx-d1");
+    return drop ? getComputedStyle(drop).animationName : null;
+  });
+  expect(running, "the falling drops must actually be animating").toBe("wx-fall");
 
   const skyOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

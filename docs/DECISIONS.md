@@ -8,6 +8,52 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-23
+
+### Transit is not a layover, and the preview card stops hiding the detail
+
+Four things on the day card, from one screenshot.
+
+**A two-hour stop is transit.** EK247 sits at Rio for about two hours on the way to Buenos
+Aires, and the card offered "Layover · Rio de Janeiro — 5m free until report" with a city guide
+for a city she never leaves the airport of. `MIN_LAYOVER_FREE_HOURS = 6` now gates the rest
+panel, and the timeline says "Transit · GIG" rather than "Layover · GIG".
+
+Six hours is a product judgement, not a regulation: it is roughly where leaving is worth the
+trip in and out. It is one exported constant precisely so it can be argued with.
+
+**A turnaround is named.** Out of base and back the same local day now says so on the card. It
+otherwise read as an ordinary duty with an odd route chain, and the ground time in the middle
+was the same word as a three-day stay in Buenos Aires.
+
+**The rest panel moved inside the flight card.** It was a second card stacked below, so one day
+read as two things. A day holding two duties passes the rest to the first card only.
+
+**The preview card carries the detail.** Reported as "day 22 renders without details": the home
+screen showed a route and three board rows, while the timeline, the weather and the glyph were
+all one tap away with nothing on screen saying so. The preview is no longer board-only.
+
+**Rejected: auto-selecting today on load.** It gets the same screen and is the more obvious fix,
+but it deletes the unselected state entirely — `next-duty-card` becomes unreachable, and nine
+tests that use it as their "the roster rendered" gate have to be rewritten. Enriching the
+preview reaches the same place without removing a state the rest of the app still reasons about.
+
+**Weather moves now.** A drawn glyph in the header: falling drops, drifting cloud, turning rays,
+a storm flash. `transform` and `opacity` on a handful of small nodes — never the card's field,
+which is still static because animating a full-card background repaints every frame. All of it
+sits inside `prefers-reduced-motion: no-preference`, so reduced motion keeps the icon and drops
+the movement rather than hiding it.
+
+Drawn rather than emoji: emoji render differently per platform, cannot take a colour token, and
+this one has to sit on a dark sky in both themes.
+
+**Still open: the Jeddah case.** The 18th shows outbound and the 19th shows a layover at JED for
+a duty that is a turnaround. Reproducing the reported shape from the marking code did not
+produce it — `awaySpans` closes an unclosed span at the last landing, which is the 18th — so the
+roster holds something the repro does not. Not guessed at; needs the actual legs.
+
+---
+
 ## 2026-08-22
 
 ### The flight card wears the destination's sky, and contrast decided the shape of it
