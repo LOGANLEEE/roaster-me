@@ -125,6 +125,33 @@ describe("fetchLayoverForecast", () => {
     ).toBeNull();
   });
 
+  it("gives up on a forecast that never arrives, and does not cache the giving up", async () => {
+    // A hung request must not sit in flight on the roster screen. AbortSignal.timeout rejects,
+    // which lands in the same catch as any other failure — and a timeout is a non-answer, so
+    // the next visit asks again rather than inheriting a blank card.
+    const calls = { n: 0 };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { signal?: AbortSignal }) => {
+        calls.n += 1;
+        if (calls.n === 1) {
+          return await new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("TimeoutError")));
+          });
+        }
+        return { ok: true, json: async () => OK_BODY } as unknown as Response;
+      }),
+    );
+    vi.useFakeTimers();
+    const args = [13.68, 100.75, "Asia/Bangkok", ["2026-09-04", "2026-09-05"]] as const;
+    const pending = fetchLayoverForecast(...args);
+    await vi.advanceTimersByTimeAsync(3_500);
+    expect(await pending).toBeNull();
+    vi.useRealTimers();
+    expect(await fetchLayoverForecast(...args)).toHaveLength(2);
+    expect(calls.n).toBe(2);
+  });
+
   it("returns null when the network fails, rather than throwing at the card", async () => {
     stubFetch({ throws: true });
     expect(

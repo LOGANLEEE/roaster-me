@@ -57,6 +57,9 @@ export function layoverDates(rest: LayoverRest): string[] {
   return dates;
 }
 
+/** A forecast is a nicety on a roster screen; it never gets to hold anything up. */
+const FORECAST_TIMEOUT_MS = 3_000;
+
 const cache = new Map<string, DayForecast[]>();
 
 type OpenMeteoDaily = {
@@ -108,7 +111,13 @@ export async function fetchLayoverForecast(
 
   let body: { error?: boolean; daily?: OpenMeteoDaily };
   try {
-    const res = await fetch(url);
+    // Bounded, because nothing on this screen may wait on a third party. A forecast that has
+    // not arrived in three seconds is not worth having — the card renders without one, and the
+    // next visit asks again (a timeout is a non-answer, so it is never cached).
+    //
+    // Unbounded, this call sat in flight on the home screen while the e2e suite walked the
+    // calendar, and a spec with no headroom left timed out at three minutes.
+    const res = await fetch(url, { signal: AbortSignal.timeout(FORECAST_TIMEOUT_MS) });
     if (!res.ok) return null;
     body = (await res.json()) as typeof body;
   } catch {
