@@ -28,6 +28,7 @@ codebase to find out. Status words mean exactly one thing:
 | Delete asks in a modal | Live | Native `<dialog>` + `showModal()`, so Esc, focus trap and inert background come from the platform. jsdom implements none of it, so the behaviour is only ever real in e2e |
 | Which sector is actually hers | Live | A multi-sector service (EK205 DXB→MXP→JFK) can change crew down-route. Non-operating legs are stored so the routing stays true but split out of `flights` into `continuation`, so a consumer that forgets the flag still gets the right times |
 | Layover days marked | Live | Days between two trips of one pairing — she is in EZE, not at home. Computed base-to-base across trips, drawn as one continuous band. See `DECISIONS.md` 2026-08-18 |
+| Grid and day card agree on the date | Live | Both keyed to the crew's base zone. The grid used to take the next duty's departure zone, which mid-pairing is an outstation — a 06:55 Dubai departure filed under the previous day |
 | Transit told apart from a layover | Live | A stop under 6h free is transit, not a layover: the timeline says so and no rest panel appears. EK247's two hours at Rio used to offer a city guide and "5m free until report" |
 | Turnaround named on the card | Live | Out of base and back the same local day |
 | The next-duty card carries the detail | Live | Timeline, weather and glyph, not just the board rows — the home screen used to hide all three behind a tap with nothing saying so |

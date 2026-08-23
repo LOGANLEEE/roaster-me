@@ -8,6 +8,45 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-23 (later)
+
+### The calendar and the day card were keyed in different time zones
+
+Reported as "the 19th shows a layover at JED". The 19th's own card said **DXB → JED, EK805,
+departs 06:55** — a day with a departure cannot be a day spent down-route, so the grid and the
+card were contradicting each other on the same screen.
+
+They were, literally. Two different `homeTz` values reached the same render:
+
+- the grid took `nextDuty.depTz`
+- every day card took `trips[0].flights[0].depTz`
+
+Mid-pairing those are not the same zone. With the next duty leaving Buenos Aires (UTC−3),
+EK805's 06:55 Dubai departure is `02:55Z`, which is **23:55 the previous day** in Buenos Aires.
+The grid filed the departure under the 18th; the 19th then held no departure at all and fell
+through to the layover fallback, which labels the day with the last station landed at.
+
+Reproduced against the real marking code before anything was changed:
+
+```
+home base tz (Asia/Dubai)     -> 18: (none)       | 19: outbound JED
+nextDuty.depTz (Buenos Aires) -> 18: outbound JED | 19: layover JED
+```
+
+The second line is the screenshot.
+
+**One zone now, and it is the crew's BASE** — taken from the earliest leg departing
+`HOME_BASE_IATA`, because that leg's `depTz` is the base airport's own zone. `trips[0]` is not a
+safe stand-in either: the API's order is not chronological and its first leg can depart an
+outstation, so the day cards were only accidentally right.
+
+**The first regression test for this was a tautology**, and the mutation caught it. It rendered
+at the module-level `now` (10 August), where the next duty IS the JED leg and the two zones
+coincide — restoring the bug changed nothing and the test still passed. It now renders at a
+`now` that sits mid-pairing, which is the only state where the two zones differ.
+
+---
+
 ## 2026-08-23
 
 ### Transit is not a layover, and the preview card stops hiding the detail
