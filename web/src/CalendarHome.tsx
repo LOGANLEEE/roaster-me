@@ -773,7 +773,26 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
 
   const badges = <CrewBadges members={crew} viewing={viewingUserId} onSelect={showRosterOf} />;
 
-  const homeTz = trips?.[0]?.flights[0]?.depTz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  /**
+   * The zone every calendar day is keyed in — the crew's BASE, not wherever she happens to be.
+   *
+   * Taken from the earliest leg that departs home base, because that leg's `depTz` is the base
+   * airport's own zone. `trips[0]` is not a safe stand-in: the API's order is not chronological
+   * and its first leg can depart an outstation.
+   *
+   * This is one value on purpose. The grid used to be keyed by `nextDuty.depTz` while the day
+   * cards were keyed by this, and mid-pairing those are different zones — with the next duty
+   * leaving Buenos Aires (UTC-3), EK805's 06:55 Dubai departure keys to the day BEFORE on the
+   * grid. The 19th then held no departure and fell through to the layover glyph, so the grid
+   * said "· JED" on a day whose own card said "DXB → JED, departs 06:55".
+   */
+  const homeTz =
+    (trips ?? [])
+      .flatMap((trip) => trip.flights)
+      .filter((leg) => leg.origin === HOME_BASE_IATA)
+      .sort((a, b) => Date.parse(a.depUtc) - Date.parse(b.depUtc))[0]?.depTz ??
+    trips?.[0]?.flights[0]?.depTz ??
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   // Every trip covering a given local calendar date, by checking each trip's away-day span for
   // that date's month against tripDaysInMonth (mirrors TripsCalendar's own per-day lookup so the
@@ -943,7 +962,7 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
       <TripsCalendar
         now={now}
         trips={trips}
-        homeTz={nextDuty.depTz}
+        homeTz={homeTz}
         onPickDay={setSelectedIso}
         optimisticIsoDates={optimisticDays}
         selectedIso={selectedIso}

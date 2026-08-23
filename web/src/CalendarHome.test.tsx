@@ -98,6 +98,62 @@ const secondDutySameDay: TripWithFlights = {
   ],
 };
 
+// Mid-pairing: she is down-route, so the next duty DEPARTS an outstation. The JED turnaround
+// sits earlier in the month and leaves home base at 06:55 Dubai — 02:55Z, which is still the
+// previous day in Buenos Aires.
+const midPairingRoster: TripWithFlights[] = [
+  {
+    id: "trip-eze",
+    userId: "u1",
+    label: null,
+    createdAt: now.getTime(),
+    flights: [
+      {
+        id: "eze1",
+        tripId: "trip-eze",
+        userId: "u1",
+        flightNo: "EK247",
+        origin: "EZE",
+        dest: "GIG",
+        depUtc: "2026-08-26T22:00:00.000Z",
+        arrUtc: "2026-08-27T01:10:00.000Z",
+        reportUtc: "2026-08-26T20:30:00.000Z",
+        depTz: "America/Argentina/Buenos_Aires",
+        arrTz: "America/Sao_Paulo",
+        source: "manual",
+        notes: null,
+        legSeq: 0,
+        operating: true,
+      },
+    ],
+  },
+  {
+    id: "trip-jed",
+    userId: "u1",
+    label: null,
+    createdAt: now.getTime(),
+    flights: [
+      {
+        id: "jed1",
+        tripId: "trip-jed",
+        userId: "u1",
+        flightNo: "EK805",
+        origin: "DXB",
+        dest: "JED",
+        depUtc: "2026-08-19T02:55:00.000Z",
+        arrUtc: "2026-08-19T05:45:00.000Z",
+        reportUtc: "2026-08-19T01:25:00.000Z",
+        depTz: "Asia/Dubai",
+        arrTz: "Asia/Riyadh",
+        source: "manual",
+        notes: null,
+        legSeq: 0,
+        operating: true,
+      },
+    ],
+  },
+];
+
 // A real turnaround: out of base and back the same local day, with a short stop at the
 // outstation. DXB 09:00 -> BAH 09:10, back BAH 11:00 -> DXB 13:10 (all local).
 const turnaroundTrip: TripWithFlights = {
@@ -743,6 +799,25 @@ describe("CalendarHome", () => {
       expect(timeline).toHaveTextContent("2h");
       expect(screen.getAllByText("Departs")).toHaveLength(2);
       expect(screen.getAllByText("Lands")).toHaveLength(2);
+    });
+
+    it("keys the grid to HOME BASE, not to wherever the next duty happens to depart", async () => {
+      // The grid used to take nextDuty.depTz. Mid-pairing that is an outstation: with the next
+      // duty leaving Buenos Aires (UTC-3), EK805's 06:55 Dubai departure keyed to the day
+      // BEFORE, so the 19th held no departure and fell through to the layover glyph — a grid
+      // saying "layover at JED" on a day whose own card said "DXB → JED, departs 06:55".
+      vi.mocked(getTrips).mockResolvedValue(midPairingRoster);
+      // `now` has to sit AFTER the JED turnaround, so the next duty is the one leaving Buenos
+      // Aires. With the module-level `now` (10 Aug) the next duty is the JED leg itself, whose
+      // depTz IS home base — the two zones coincide and the bug cannot show.
+      render(<CalendarHome now={new Date("2026-08-23T10:00:00.000Z")} />);
+
+      const nineteenth = await screen.findByTestId("calendar-day-2026-08-19");
+      expect(nineteenth).toHaveAttribute("aria-label", expect.stringContaining("outbound to JED"));
+      expect(screen.getByTestId("calendar-day-2026-08-18")).not.toHaveAttribute(
+        "aria-label",
+        expect.stringContaining("JED"),
+      );
     });
 
     it("names a turnaround, and calls its ground stop transit rather than a layover", async () => {
