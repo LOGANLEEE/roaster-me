@@ -277,10 +277,21 @@ export type ScheduleLegOffset = {
  * 07:45, after leg 0's 06:00 arrival, so no extra roll - it departs on `pickedIso + 1` as
  * `dayOffset` alone already implies.
  *
+ * `anchorIndex` is which leg `pickedIso` describes — the first sector the crew member actually
+ * works, which is not always leg 0. A roster line dates a duty by the sector she flies, so
+ * "26 Aug EK248" from someone joining at Rio means the RIO departure is on the 26th, and the
+ * EZE sector the aircraft flew before she boarded belongs to the 25th. Anchoring on leg 0
+ * regardless put that duty a whole day late: Rio on the 27th, Dubai on the 28th, for a crew
+ * member who was home by 00:50 on the 27th. Legs before the anchor date backwards from it.
+ *
  * Returns one departure-date ISO string per leg, same order/length as `legs`.
  */
-export function legDatesFromPicked(pickedIso: string, legs: ScheduleLegOffset[]): string[] {
-  const depDates: string[] = [];
+export function legDatesFromPicked(
+  pickedIso: string,
+  legs: ScheduleLegOffset[],
+  anchorIndex = 0,
+): string[] {
+  const offsets: number[] = [];
   let cumulativeOffsetDays = 0;
   let prevArrLocal: string | null = null;
   for (const leg of legs) {
@@ -290,11 +301,15 @@ export function legDatesFromPicked(pickedIso: string, legs: ScheduleLegOffset[])
       // physically possible.
       cumulativeOffsetDays += 1;
     }
-    depDates.push(addDaysIso(pickedIso, cumulativeOffsetDays));
+    offsets.push(cumulativeOffsetDays);
     cumulativeOffsetDays += leg.dayOffset;
     prevArrLocal = leg.arrLocal;
   }
-  return depDates;
+  // Slide the whole routing so the anchor leg lands on `pickedIso`. The offsets BETWEEN legs
+  // are what the schedule fixes; which calendar day the run sits on is what the picked date
+  // decides, and it decides it about one leg.
+  const shift = offsets[anchorIndex] ?? 0;
+  return offsets.map((offset) => addDaysIso(pickedIso, offset - shift));
 }
 
 export type MonthGridCell = {
@@ -344,12 +359,15 @@ export function monthGrid(year: number, month: number, _tz: string): MonthGridCe
 
 export type TripSpan = {
   firstDepUtc: string;
-  lastArrUtc: string;
+  /** Where the span stops. Usually the last arrival — but a caller that knows the trip ends at
+   * home base passes the moment she BOARDS the flight home instead, so a red-eye landing after
+   * local midnight does not claim the next morning as a day away. See `calendarSpan`. */
+  endUtc: string;
 };
 
 /**
  * Maps each local calendar date (in `homeTz`) covered by any trip's span (first departure to
- * last arrival) within the given `year`/`month` to "away" (fully covered day) or "partial"
+ * the span's end — see `TripSpan.endUtc`) within the given `year`/`month` to "away" (fully covered day) or "partial"
  * (the trip's first or last local day, when part of the day is spent outside the trip).
  * A single-day trip's only day is "away".
  */
@@ -364,10 +382,10 @@ export function tripDaysInMonth(
 
   for (const trip of trips) {
     const firstDayKey = localDateKeyFromEpoch(localDayEpoch(trip.firstDepUtc, homeTz));
-    const lastDayKey = localDateKeyFromEpoch(localDayEpoch(trip.lastArrUtc, homeTz));
+    const lastDayKey = localDateKeyFromEpoch(localDayEpoch(trip.endUtc, homeTz));
 
     let cursor = localDayEpoch(trip.firstDepUtc, homeTz);
-    const end = localDayEpoch(trip.lastArrUtc, homeTz);
+    const end = localDayEpoch(trip.endUtc, homeTz);
     const DAY_MS = 24 * 60 * 60 * 1000;
 
     while (cursor <= end) {

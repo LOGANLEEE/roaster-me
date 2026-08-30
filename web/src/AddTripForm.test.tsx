@@ -100,6 +100,85 @@ describe("AddTripForm", () => {
     });
   });
 
+  // The other end of the same question, and the one that decides what the picked date MEANS.
+  // EK248 is EZE->GIG->DXB with a day offset on both legs. A crew member joining at Rio dates
+  // her duty by the Rio departure, so "26 Aug" must put GIG on the 26th and the EZE sector the
+  // aircraft flew to reach her on the 25th. Read as leg 0's date it landed her in Dubai on the
+  // 28th, and the calendar told the family she was home a day late.
+  it("multi-sector: boarding partway re-dates the routing around the sector she actually flies", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(lookupSchedule).mockResolvedValue({
+      legs: [
+        {
+          legSeq: 0,
+          origin: "EZE",
+          dest: "GIG",
+          depLocal: "22:25",
+          arrLocal: "01:10",
+          dayOffset: 1,
+          originTz: "America/Argentina/Buenos_Aires",
+          destTz: "America/Sao_Paulo",
+          confirmCount: 2,
+        },
+        {
+          legSeq: 1,
+          origin: "GIG",
+          dest: "DXB",
+          depLocal: "03:05",
+          arrLocal: "00:30",
+          dayOffset: 1,
+          originTz: "America/Sao_Paulo",
+          destTz: "Asia/Dubai",
+          confirmCount: 2,
+        },
+      ],
+    });
+    vi.mocked(createTrip).mockResolvedValue({
+      id: "trip-248",
+      userId: "u1",
+      label: null,
+      createdAt: Date.now(),
+      flights: [],
+    });
+
+    render(
+      <AddTripForm isoDate="2026-08-26" homeTz="Asia/Dubai" onSubmitted={vi.fn()} />,
+    );
+
+    await user.type(screen.getByTestId("flightno-input"), "248");
+    await vi.advanceTimersByTimeAsync(400);
+    await screen.findByTestId("autofill-card");
+
+    // Leg 0 is the default, so nothing is claimed about the date yet.
+    await screen.findByTestId("boarding-point");
+    expect(screen.queryByTestId("boarding-note")).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("boarding-GIG"));
+    expect(screen.getByTestId("boarding-note")).toHaveTextContent(/GIG departure/);
+
+    await user.click(screen.getByRole("button", { name: /add to roster/i }));
+    await waitFor(() => expect(createTrip).toHaveBeenCalled());
+
+    const payload = vi.mocked(createTrip).mock.calls[0]?.[0];
+    expect(payload!.legs).toHaveLength(2);
+    // Buenos Aires and Rio are both UTC-3; Dubai is UTC+4.
+    expect(payload!.legs[0]).toMatchObject({
+      origin: "EZE",
+      operating: false,
+      depUtc: "2026-08-26T01:25:00.000Z", // 25 Aug 22:25 local — before she got on
+    });
+    expect(payload!.legs[1]).toMatchObject({
+      origin: "GIG",
+      operating: true,
+      depUtc: "2026-08-26T06:05:00.000Z", // 26 Aug 03:05 local — the date she was given
+      arrUtc: "2026-08-26T20:30:00.000Z", // 27 Aug 00:30 Dubai — the morning she got home
+    });
+
+    // She can vouch for the sector she worked and nothing else.
+    expect(confirmSchedule).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(confirmSchedule).mock.calls[0]?.[0]).toMatchObject({ origin: "GIG" });
+  });
+
   it("add flow: happy path posts the same UTC payload as the original stepper, then fires confirmSchedule and onSubmitted", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     vi.mocked(lookupSchedule).mockResolvedValue({

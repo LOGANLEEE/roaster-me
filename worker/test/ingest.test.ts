@@ -169,9 +169,15 @@ describe("ingest arrivals", () => {
     return id;
   }
 
-  it("lists arrivals inside the window and hides ones already finished", async () => {
+  it("lists every arrival inside the window, finished alert stages included", async () => {
+    // The third one is the case that matters. Its alert stages are finished while its arrival
+    // is still an hour out, which is precisely what a stored-too-early time looks like after
+    // the scan has declared it landed. Excluding it — as this endpoint used to — is what froze
+    // EK248 at 00:09 and pushed "landing now" 41 minutes early.
     const soon = await makeFlight(new Date(Date.now() + 60 * 60_000).toISOString(), null);
-    const done = await makeFlight(new Date(Date.now() + 60 * 60_000).toISOString(), 0);
+    const partway = await makeFlight(new Date(Date.now() + 60 * 60_000).toISOString(), 30);
+    const finishedButNotDown = await makeFlight(new Date(Date.now() + 60 * 60_000).toISOString(), 0);
+    const longGone = await makeFlight(new Date(Date.now() - 3 * 3600_000).toISOString(), 0);
     const res = await app.fetch(
       new Request("https://x.test/api/ingest/upcoming-arrivals?hours=4", {
         headers: { authorization: `Bearer ${TOKEN}` },
@@ -181,7 +187,10 @@ describe("ingest arrivals", () => {
     expect(res.status).toBe(200);
     const ids = ((await res.json()) as { flights: { id: string }[] }).flights.map((f) => f.id);
     expect(ids).toContain(soon);
-    expect(ids).not.toContain(done);
+    expect(ids).toContain(partway);
+    expect(ids).toContain(finishedButNotDown);
+    // The time window is what retires a flight now, and it still does.
+    expect(ids).not.toContain(longGone);
   });
 
   it("applies a correction and re-arms the alert stages", async () => {
@@ -197,6 +206,21 @@ describe("ingest arrivals", () => {
     const [row] = await db().select().from(schema.flights).where(eq(schema.flights.id, id));
     expect(row?.arrUtc).toBe(corrected);
     expect(row?.arrivalAlertStage).toBeNull();
+  });
+
+  it("does not re-arm when the corrected arrival is already in the past", async () => {
+    // fr24 reporting an actual landing that has already happened is not a reason to announce
+    // it. Re-arming here would fire "landing now" at a family whose crew is already in the car.
+    const id = await makeFlight(new Date(Date.now() + 60 * 60_000).toISOString(), 0);
+    const corrected = new Date(Date.now() - 20 * 60_000).toISOString();
+    const res = await post("/api/ingest/arrival-corrections", {
+      corrections: [{ flightId: id, arrUtc: corrected }],
+    });
+    expect(res.status).toBe(200);
+
+    const [row] = await db().select().from(schema.flights).where(eq(schema.flights.id, id));
+    expect(row?.arrUtc).toBe(corrected);
+    expect(row?.arrivalAlertStage).toBe(0);
   });
 
   it("rejects a correction with a non-ISO arrival time", async () => {

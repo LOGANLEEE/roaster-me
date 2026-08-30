@@ -1,4 +1,4 @@
-import { localDateKey } from "@danyeowa/shared";
+import { localDateKey, type TripSpan } from "@danyeowa/shared";
 
 /** What a duty day is, relative to home base - drives the calendar cell's arrow glyph so
  * outbound vs return vs turnaround are readable without tapping the day. */
@@ -75,7 +75,28 @@ export function dutyDayMarks(
   return marks;
 }
 
-export type AwaySpan = { firstDepUtc: string; lastArrUtc: string };
+export type AwaySpan = { firstDepUtc: string; endUtc: string };
+
+/**
+ * The stretch a trip should paint on the calendar, as `tripDaysInMonth` wants it.
+ *
+ * Not simply first departure to last arrival. A leg that lands at base ends the stretch when she
+ * BOARDS it, not when the wheels touch: the flight home from a long layover routinely lands
+ * after home-local midnight, and running the span to the landing paints the morning she is
+ * already asleep in her own bed as another day down-route. EK248 landed 00:09 on the 28th and
+ * the 28th came out marked "layover · DXB" — a day at the outstation she was never at.
+ *
+ * `legs` must already be sorted by `legSeq`.
+ */
+export function calendarSpan(legs: readonly LegLike[], base: string): TripSpan | null {
+  const first = legs[0];
+  const last = legs[legs.length - 1];
+  if (!first || !last) return null;
+  return {
+    firstDepUtc: first.depUtc,
+    endUtc: last.dest === base ? last.depUtc : last.arrUtc,
+  };
+}
 
 /**
  * The stretches when the crew member is away from home base — walked across trips, not within one.
@@ -86,7 +107,8 @@ export type AwaySpan = { firstDepUtc: string; lastArrUtc: string };
  * flying, but she is also not coming back.
  *
  * Walking the legs base-to-base finds those days: away opens on a departure from base and closes
- * on an arrival at base.
+ * on the flight home — at the moment she boards it, not when it lands, for the reason spelled
+ * out on `calendarSpan`.
  *
  * Two cases the walk has to survive, both caused by a roster that is only ever partly known:
  *
@@ -112,17 +134,19 @@ export function awaySpans(
   for (const leg of legs) {
     if (leg.origin === base) {
       if (openedAt !== null && lastArrUtc !== null)
-        spans.push({ firstDepUtc: openedAt, lastArrUtc });
+        spans.push({ firstDepUtc: openedAt, endUtc: lastArrUtc });
       openedAt = leg.depUtc;
     }
     lastArrUtc = leg.arrUtc;
     if (openedAt !== null && leg.dest === base) {
-      spans.push({ firstDepUtc: openedAt, lastArrUtc: leg.arrUtc });
+      // Closes where she boards the flight home, not where it lands — same reason as
+      // `calendarSpan`, and it has to match or the two mark sources disagree by a day.
+      spans.push({ firstDepUtc: openedAt, endUtc: leg.depUtc });
       openedAt = null;
     }
   }
 
   if (openedAt !== null && lastArrUtc !== null)
-    spans.push({ firstDepUtc: openedAt, lastArrUtc });
+    spans.push({ firstDepUtc: openedAt, endUtc: lastArrUtc });
   return spans;
 }

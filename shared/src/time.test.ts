@@ -404,6 +404,41 @@ describe("legDatesFromPicked", () => {
     ]);
     expect(dates).toEqual(["2026-12-31", "2027-01-01"]);
   });
+
+  describe("when the crew member joins partway along the routing", () => {
+    // EK248 as it really runs: EZE 22:25 -> GIG 01:10 (+1), then GIG 03:05 -> DXB 00:30 (+1).
+    const EK248 = [
+      { dayOffset: 1, depLocal: "22:25", arrLocal: "01:10" },
+      { dayOffset: 1, depLocal: "03:05", arrLocal: "00:30" },
+    ];
+
+    it("dates the whole routing from the leg she actually boards", () => {
+      // She worked the Rio sector on the 26th, so that is what "26 Aug EK248" means. The EZE
+      // sector the aircraft flew before she got on belongs to the 25th, and Dubai lands on the
+      // 27th — which is when she got home. Anchored on leg 0 this read Rio on the 27th and
+      // Dubai on the 28th, and the roster said she came back a day late.
+      expect(legDatesFromPicked("2026-08-26", EK248, 1)).toEqual(["2026-08-25", "2026-08-26"]);
+    });
+
+    it("still anchors on leg 0 when she flies the whole thing", () => {
+      expect(legDatesFromPicked("2026-08-26", EK248)).toEqual(["2026-08-26", "2026-08-27"]);
+      expect(legDatesFromPicked("2026-08-26", EK248, 0)).toEqual(["2026-08-26", "2026-08-27"]);
+    });
+
+    it("keeps the gaps the schedule fixes, wherever the anchor sits", () => {
+      // Sliding the run must not stretch or squash it: the spacing between legs is the
+      // schedule's to decide, and only which day the run starts on is the picker's.
+      const fromLeg0 = legDatesFromPicked("2026-08-26", EK248, 0);
+      const fromLeg1 = legDatesFromPicked("2026-08-26", EK248, 1);
+      expect(Date.parse(fromLeg0[1]!) - Date.parse(fromLeg0[0]!)).toBe(
+        Date.parse(fromLeg1[1]!) - Date.parse(fromLeg1[0]!),
+      );
+    });
+
+    it("ignores an anchor index that is out of range rather than shifting by NaN", () => {
+      expect(legDatesFromPicked("2026-08-26", EK248, 7)).toEqual(["2026-08-26", "2026-08-27"]);
+    });
+  });
 });
 
 describe("monthGrid", () => {
@@ -476,7 +511,7 @@ describe("monthGrid", () => {
 describe("tripDaysInMonth", () => {
   it("marks a single same-local-day trip as 'away' for its one day", () => {
     const trips: TripSpan[] = [
-      { firstDepUtc: "2026-08-10T05:00:00Z", lastArrUtc: "2026-08-10T10:00:00Z" },
+      { firstDepUtc: "2026-08-10T05:00:00Z", endUtc: "2026-08-10T10:00:00Z" },
     ];
     const map = tripDaysInMonth(trips, 2026, 8, "Asia/Dubai");
     expect(map.get("2026-08-10")).toBe("away");
@@ -488,7 +523,7 @@ describe("tripDaysInMonth", () => {
     // Last arr 2026-08-12 18:00 local (2026-08-12T14:00Z). Local days: Aug 10 (partial,
     // departs mid-day), Aug 11 (away, full day), Aug 12 (partial, arrives mid-day).
     const trips: TripSpan[] = [
-      { firstDepUtc: "2026-08-09T22:15:00Z", lastArrUtc: "2026-08-12T14:00:00Z" },
+      { firstDepUtc: "2026-08-09T22:15:00Z", endUtc: "2026-08-12T14:00:00Z" },
     ];
     const map = tripDaysInMonth(trips, 2026, 8, "Asia/Dubai");
     expect(map.get("2026-08-10")).toBe("partial");
@@ -500,7 +535,7 @@ describe("tripDaysInMonth", () => {
   it("only includes days that fall within the requested month/year", () => {
     // Trip spans Jul 31 -> Aug 2 in Asia/Dubai local; querying August should only include Aug 1-2.
     const trips: TripSpan[] = [
-      { firstDepUtc: "2026-07-31T18:00:00Z", lastArrUtc: "2026-08-02T10:00:00Z" }, // Jul 31 22:00, Aug 2 14:00 Dubai local
+      { firstDepUtc: "2026-07-31T18:00:00Z", endUtc: "2026-08-02T10:00:00Z" }, // Jul 31 22:00, Aug 2 14:00 Dubai local
     ];
     const map = tripDaysInMonth(trips, 2026, 8, "Asia/Dubai");
     expect(map.has("2026-07-31")).toBe(false);
@@ -510,8 +545,8 @@ describe("tripDaysInMonth", () => {
 
   it("merges multiple trips into one map, keyed by ISO date", () => {
     const trips: TripSpan[] = [
-      { firstDepUtc: "2026-08-05T05:00:00Z", lastArrUtc: "2026-08-05T10:00:00Z" },
-      { firstDepUtc: "2026-08-20T05:00:00Z", lastArrUtc: "2026-08-20T10:00:00Z" },
+      { firstDepUtc: "2026-08-05T05:00:00Z", endUtc: "2026-08-05T10:00:00Z" },
+      { firstDepUtc: "2026-08-20T05:00:00Z", endUtc: "2026-08-20T10:00:00Z" },
     ];
     const map = tripDaysInMonth(trips, 2026, 8, "Asia/Dubai");
     expect(map.get("2026-08-05")).toBe("away");
@@ -521,7 +556,7 @@ describe("tripDaysInMonth", () => {
 
   it("returns an empty map when no trips fall in the given month", () => {
     const trips: TripSpan[] = [
-      { firstDepUtc: "2026-07-05T05:00:00Z", lastArrUtc: "2026-07-05T10:00:00Z" },
+      { firstDepUtc: "2026-07-05T05:00:00Z", endUtc: "2026-07-05T10:00:00Z" },
     ];
     const map = tripDaysInMonth(trips, 2026, 8, "Asia/Dubai");
     expect(map.size).toBe(0);

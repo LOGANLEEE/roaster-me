@@ -298,7 +298,9 @@ describe("CalendarHome", () => {
     expect(card).toHaveTextContent("04:45"); // report: firstLeg.reportUtc in Asia/Dubai
     expect(card).toHaveTextContent("06:15"); // dep: firstLeg.depUtc in Asia/Dubai
     expect(card).toHaveTextContent("16:20"); // arr: lastLeg.arrUtc in Pacific/Auckland
-    expect(card).toHaveTextContent("+1"); // arrival lands a calendar day later
+    // The landing day is spelled out rather than left as a "+1" to add to a date in another
+    // country. Auckland is a calendar day ahead of the Dubai departure.
+    expect(card).toHaveTextContent("Wed 12 · 16:20");
     expect(card).toHaveTextContent("1d 2h"); // elapsed time, kept from the old sector rail
     // The preview carries the timeline too. It used to stop at the board rows, which is what
     // "day 22 renders without details" was: the home screen showed a route and three times,

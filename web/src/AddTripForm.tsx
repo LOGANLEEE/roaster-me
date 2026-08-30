@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { digitsOf, getAirlinePrefix } from "./lib/airlinePrefix";
+import { humanDateLabel } from "./lib/dateLabel";
 import { useTripEntry } from "./useTripEntry";
 import type { AutofillLegDraft, UseTripEntryReturn } from "./useTripEntry";
 
@@ -82,6 +83,7 @@ export default function AddTripForm({
 }) {
   const flightNoInputRef = useRef<HTMLInputElement>(null);
   const pickedDate = isoDate;
+  const pickedDateLabel = humanDateLabel(isoDate, homeTz);
   const [airlinePrefix] = useState(getAirlinePrefix);
 
   // One flight per day is the norm, and a turnaround's second leg is appended to this same
@@ -180,6 +182,47 @@ export default function AddTripForm({
                   <div data-testid="autofill-card" className="flex flex-col gap-3 rounded border border-edge bg-raised p-4">
                     {outboundLegs.map((leg, index) => renderLegFields(leg, index))}
                     <p className="text-sm text-ink-muted">times from schedule — edit if your roster differs</p>
+                  </div>
+                )}
+
+                {/* The other half of the same question, and the one that decides what the picked
+                    date means. A roster dates a duty by the sector flown: "26 Aug EK248" from
+                    someone joining at Rio is the RIO departure. Read as leg 0's date it put the
+                    whole pairing a day late. Choosing here re-dates the routing around it. */}
+                {preview && preview.length > 1 && (
+                  <div
+                    data-testid="boarding-point"
+                    className="flex flex-col gap-2 rounded border border-edge bg-raised p-4"
+                  >
+                    <p className="text-ink">Where do you get on?</p>
+                    <div className="flex flex-wrap gap-2">
+                      {preview.map((leg, i) => {
+                        const chosen = (entry.boardingLegIndex ?? 0) === i;
+                        return (
+                          <button
+                            key={leg.legSeq}
+                            type="button"
+                            data-testid={`boarding-${leg.origin}`}
+                            aria-pressed={chosen}
+                            onClick={() => entry.setBoardingLeg(i)}
+                            className={[
+                              "num min-h-[44px] rounded border px-3 py-2 transition-colors duration-[120ms]",
+                              chosen
+                                ? "border-accent bg-accent-soft text-accent"
+                                : "border-edge text-ink-muted hover:border-ink-muted",
+                            ].join(" ")}
+                          >
+                            {leg.origin}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(entry.boardingLegIndex ?? 0) > 0 && (
+                      <p data-testid="boarding-note" className="text-sm text-ink-muted">
+                        {pickedDateLabel} is read as your {preview[entry.boardingLegIndex ?? 0]!.origin}{" "}
+                        departure. The sectors before it are how the aircraft got there.
+                      </p>
+                    )}
                   </div>
                 )}
 

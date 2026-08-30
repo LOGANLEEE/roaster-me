@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, lte, or, gt } from "drizzle-orm";
+import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import { IngestArrivalSchema, IngestScheduleSchema } from "@danyeowa/shared";
@@ -110,10 +110,18 @@ ingestRouter.post("/ingest/schedules", async (c) => {
 });
 
 /**
- * The arrivals the refresher should check: near-term, not yet finished with their alerts.
+ * The arrivals the refresher should check: everything landing near enough to still move.
  *
  * Scoping the window here rather than in the script keeps the query — and its meaning — next to
  * the alert scan that consumes the same columns.
+ *
+ * The window is the only filter, deliberately. This used to also drop any flight whose alert
+ * stages were finished, which sounds like an efficiency win and is in fact how a wrong arrival
+ * time becomes permanent: the scan claims stage 0 the moment the STORED time passes, so a
+ * flight still airborne — stored early — leaves the refresher at exactly the moment it most
+ * needs correcting. EK248 on 2026-08-27 froze at 00:09 that way and announced "landing now"
+ * 41 minutes before it landed. A flight that really has landed falls out of the window on its
+ * own 20 minutes later, so keeping it costs one fr24 lookup, once.
  */
 ingestRouter.get("/ingest/upcoming-arrivals", async (c) => {
   if (!authorised(c)) return c.json({ error: "unauthorized" }, 401);
@@ -135,11 +143,7 @@ ingestRouter.get("/ingest/upcoming-arrivals", async (c) => {
     })
     .from(schema.flights)
     .where(
-      and(
-        gte(schema.flights.arrUtc, fromIso),
-        lte(schema.flights.arrUtc, toIso),
-        or(isNull(schema.flights.arrivalAlertStage), gt(schema.flights.arrivalAlertStage, 0)),
-      ),
+      and(gte(schema.flights.arrUtc, fromIso), lte(schema.flights.arrUtc, toIso)),
     )
     .orderBy(asc(schema.flights.arrUtc));
 
@@ -159,11 +163,16 @@ ingestRouter.post("/ingest/arrival-corrections", async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error.message }, 400);
 
   const database = db(c.env);
+  const now = Date.now();
   let updated = 0;
   for (const correction of parsed.data.corrections) {
+    // Re-arm only when there is still something to announce. A correction that moves the
+    // arrival into the PAST is news about a landing that already happened; clearing the stage
+    // there would fire "landing now" at someone whose crew is off the aircraft.
+    const stillAhead = Date.parse(correction.arrUtc) > now;
     const result = await database
       .update(schema.flights)
-      .set({ arrUtc: correction.arrUtc, arrivalAlertStage: null })
+      .set(stillAhead ? { arrUtc: correction.arrUtc, arrivalAlertStage: null } : { arrUtc: correction.arrUtc })
       .where(eq(schema.flights.id, correction.flightId))
       .run();
     updated += result.meta.changes ?? 0;

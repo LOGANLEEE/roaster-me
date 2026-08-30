@@ -346,13 +346,13 @@ describe("TripsCalendar", () => {
 
     const day = (iso: string) => screen.getByTestId(`calendar-day-${iso}`);
 
-    // 24th opens the row; 25th, 26th and 27th sit inside it, so inner corners square off.
+    // 24th opens the row; 25th and 26th sit inside it, so inner corners square off.
     expect(day("2026-08-25").className).toContain("rounded-none");
     expect(day("2026-08-26").className).toContain("rounded-none");
-    expect(day("2026-08-27").className).toContain("rounded-none");
-    // She lands at 21:40Z on the 27th, which is 01:40 on the 28th in Dubai — so the 28th is the
-    // last day away and the one that closes the band.
-    expect(day("2026-08-28").className).toContain("rounded-r-lg");
+    // She boards the flight home at 03:00Z on the 27th and lands 01:40 on the 28th, Dubai time.
+    // The 27th is the last day away and closes the band; the 28th is a morning at home.
+    expect(day("2026-08-27").className).toContain("rounded-r-lg");
+    expect(day("2026-08-28").className).not.toContain("bg-accent-soft");
     // A day with nothing on it is a plain rounded box.
     expect(day("2026-08-30").className).toContain("rounded-lg");
     expect(day("2026-08-30").className).not.toContain("rounded-none");
@@ -360,7 +360,7 @@ describe("TripsCalendar", () => {
     // The 0.5rem grid gap is bridged, so the band has no seams between the days inside it.
     expect(day("2026-08-25").querySelector(".left-full")).not.toBeNull();
     // ...and is not bridged past the end of the run.
-    expect(day("2026-08-28").querySelector(".left-full")).toBeNull();
+    expect(day("2026-08-27").querySelector(".left-full")).toBeNull();
   });
 
   it("breaks the band at the week boundary rather than running off the row", () => {
@@ -598,7 +598,7 @@ describe("TripsCalendar", () => {
     // background tab, or reduced motion will not run.
     expect(screen.getByText(/september 2026/i)).toBeInTheDocument();
     expect(trackOf(grid).style.transform).toBe("translate3d(-100%, 0, 0)");
-    expect(trackOf(grid).style.transition).toMatch(/transform 320ms/);
+    expect(trackOf(grid).style.transition).toMatch(/transform 480ms/);
   });
 
   it("glides back to centre after a drag too short to change the month", () => {
@@ -616,7 +616,7 @@ describe("TripsCalendar", () => {
 
     expect(screen.getByText(/august 2026/i)).toBeInTheDocument();
     expect(trackOf(grid).style.transform).toBe("translate3d(-100%, 0, 0)");
-    expect(trackOf(grid).style.transition).toMatch(/transform 320ms/);
+    expect(trackOf(grid).style.transition).toMatch(/transform 480ms/);
   });
 
   it("renders both neighbouring months, inert, so a drag reveals real days", () => {
@@ -661,7 +661,7 @@ describe("TripsCalendar", () => {
     await user.click(screen.getByTestId("calendar-next"));
 
     expect(screen.getByText(/september 2026/i)).toBeInTheDocument();
-    expect(track.style.transition).toMatch(/transform 320ms/);
+    expect(track.style.transition).toMatch(/transform 480ms/);
     expect(track.style.transform).toBe("translate3d(-100%, 0, 0)");
   });
 

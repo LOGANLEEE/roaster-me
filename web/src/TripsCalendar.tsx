@@ -3,7 +3,7 @@ import { localDateKey, monthGrid, tripDaysInMonth } from "@danyeowa/shared";
 import type { TripWithFlights } from "./api";
 import { dutyDayMarks, type DayKind } from "./lib/dayMarks";
 import { HOME_BASE_IATA } from "./lib/homeBase";
-import { awaySpans } from "./lib/dayMarks";
+import { awaySpans, calendarSpan } from "./lib/dayMarks";
 
 type Props = {
   now: Date;
@@ -65,8 +65,9 @@ const SWIPE_DIRECTIONAL_RATIO = 1.5;
 // tap it would otherwise leave behind, so releasing mid-gesture never also selects a day.
 const TAP_CANCEL_DISTANCE = 10;
 // The settle after a release. --ease-snap is the token the rest of the app uses for "arrives and
-// stops" motion; 320ms is long enough to read as travel at phone width without feeling slow.
-const SLIDE_TRANSITION = "transform 320ms var(--ease-snap)";
+// stops" motion; 480ms (was 320ms — too quick to read as a deliberate arrival, closer to a cut)
+// gives the swipe enough travel time to register at phone width without feeling slow.
+const SLIDE_TRANSITION = "transform 480ms var(--ease-snap)";
 // The track is a flex row whose three panels each take its full width and overflow it, so the
 // track's own box stays exactly one panel wide. Percentages in `translate` resolve against that
 // box — which is why centring the middle panel is -100%, not -33.33%. Measured, not assumed: at
@@ -119,11 +120,11 @@ export default function TripsCalendar({
     ? []
     : trips
         .map((trip) => {
-          const legs = [...trip.flights].sort((a, b) => a.legSeq - b.legSeq);
-          const first = legs[0];
-          const last = legs[legs.length - 1];
-          if (!first || !last) return null;
-          return { trip, firstDepUtc: first.depUtc, lastArrUtc: last.arrUtc };
+          const span = calendarSpan(
+            [...trip.flights].sort((a, b) => a.legSeq - b.legSeq),
+            HOME_BASE_IATA,
+          );
+          return span ? { trip, ...span } : null;
         })
         .filter(
           (
@@ -131,7 +132,7 @@ export default function TripsCalendar({
           ): entry is {
             trip: TripWithFlights;
             firstDepUtc: string;
-            lastArrUtc: string;
+            endUtc: string;
           } => entry !== null,
         );
 
@@ -142,14 +143,12 @@ export default function TripsCalendar({
     // Two sources, unioned. Per-trip spans are what the calendar has always marked; the
     // base-to-base away spans add the days between two trips of one pairing — the layover in
     // Buenos Aires that belongs to neither EK247 nor EK248 and used to read as a day at home.
-    // Union, not replacement: a roster the walk cannot interpret still marks everything it did
-    // before, so no day that is marked today can become unmarked.
+    // Union, not replacement: a roster the walk cannot interpret still marks everything the
+    // per-trip spans marked. The one day both sources now deliberately give up is the morning a
+    // red-eye lands back at base — she is home for all of it, and marking it said otherwise.
     const dayMarks = tripDaysInMonth(
       [
-        ...tripSpans.map(({ firstDepUtc, lastArrUtc }) => ({
-          firstDepUtc,
-          lastArrUtc,
-        })),
+        ...tripSpans.map(({ firstDepUtc, endUtc }) => ({ firstDepUtc, endUtc })),
         ...awaySpans(
           tripSpans.map(({ trip }) => trip),
           HOME_BASE_IATA,

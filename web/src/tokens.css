@@ -126,7 +126,9 @@ button:not(:disabled),
   /* "Snap": the calendar tab's scroll-to-expand interaction (collapse/ground-deepen/timeline
      stagger) — a springier settle than --ease-standard's linear-ish glide. */
   --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
-  --duration-enter: 240ms;
+  /* 420ms, not 240ms: at 240ms the rise read as a flicker, not motion anyone could actually
+     track. Paired with fade-rise's wider translateY below. */
+  --duration-enter: 420ms;
   --duration-micro: 120ms;
   --stagger-step: 60ms;
 }
@@ -196,7 +198,9 @@ body {
 @keyframes fade-rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    /* 20px, not 8px: 8px of travel is sub-perceptual at a glance — this is the distance that
+       reads as a rise instead of a fade. */
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
@@ -242,20 +246,14 @@ body {
 /* Duty-detail timeline rows (always visible on the calendar tab's day-detail card, staggered
    in on mount). Unlike .entrance, which always opacity-fades (just without the rise) even under
    reduced motion, this is scoped ENTIRELY inside the no-preference query below — under reduced
-   motion .tl-enter carries no styles at all, so the timeline is simply present, no fade at all. */
+   motion .tl-enter carries no styles at all, so the timeline is simply present, no fade at all.
+   Every row carries this one class now (not just the first three) — the per-row stagger comes
+   from an inline `animationDelay` set in CalendarHome.tsx, clamped there so a long timeline still
+   finishes settling quickly instead of the last row trailing in seconds late. */
 @media (prefers-reduced-motion: no-preference) {
   .tl-enter {
     opacity: 0;
     animation: fade-rise var(--duration-enter) var(--ease-snap) forwards;
-  }
-  .tl-enter-1 {
-    animation-delay: 60ms;
-  }
-  .tl-enter-2 {
-    animation-delay: 120ms;
-  }
-  .tl-enter-3 {
-    animation-delay: 180ms;
   }
 }
 
