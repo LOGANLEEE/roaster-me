@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { awaySpans, dutyDayMarks } from "./dayMarks";
+import { tripDaysInMonth } from "@danyeowa/shared";
+import { awaySpans, calendarSpan, dutyDayMarks } from "./dayMarks";
 
 const BASE = "DXB";
 
@@ -29,9 +30,10 @@ describe("awaySpans", () => {
   it("joins two trips into one stretch away from base", () => {
     const spans = awaySpans([OUT, BACK], BASE);
 
-    // One span, not two: she leaves base once and returns once.
+    // One span, not two: she leaves base once and returns once. It ends where she boards the
+    // flight home, which is why the value below is a departure and not the 21:40 landing.
     expect(spans).toEqual([
-      { firstDepUtc: "2026-08-22T02:30:00.000Z", lastArrUtc: "2026-08-27T21:40:00.000Z" },
+      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-27T03:00:00.000Z" },
     ]);
   });
 
@@ -55,7 +57,7 @@ describe("awaySpans", () => {
       ],
     };
     expect(awaySpans([turn], BASE)).toEqual([
-      { firstDepUtc: "2026-08-05T04:00:00.000Z", lastArrUtc: "2026-08-05T10:00:00.000Z" },
+      { firstDepUtc: "2026-08-05T04:00:00.000Z", endUtc: "2026-08-05T07:30:00.000Z" },
     ]);
   });
 
@@ -68,8 +70,8 @@ describe("awaySpans", () => {
     const spans = awaySpans([jed, OUT, BACK], BASE);
 
     expect(spans).toEqual([
-      { firstDepUtc: "2026-08-19T05:00:00.000Z", lastArrUtc: "2026-08-19T07:45:00.000Z" },
-      { firstDepUtc: "2026-08-22T02:30:00.000Z", lastArrUtc: "2026-08-27T21:40:00.000Z" },
+      { firstDepUtc: "2026-08-19T05:00:00.000Z", endUtc: "2026-08-19T07:45:00.000Z" },
+      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-27T03:00:00.000Z" },
     ]);
   });
 
@@ -78,7 +80,7 @@ describe("awaySpans", () => {
     // invent days she may already be home for.
     const spans = awaySpans([OUT], BASE);
     expect(spans).toEqual([
-      { firstDepUtc: "2026-08-22T02:30:00.000Z", lastArrUtc: "2026-08-22T20:15:00.000Z" },
+      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-22T20:15:00.000Z" },
     ]);
   });
 
@@ -90,5 +92,48 @@ describe("awaySpans", () => {
   it("orders legs by departure, not by the order the trips arrive in", () => {
     // /api/trips does not promise an order, and a reversed list must not produce a reversed walk.
     expect(awaySpans([BACK, OUT], BASE)).toEqual(awaySpans([OUT, BACK], BASE));
+  });
+});
+
+/** EK248's last leg leaves Rio at 06:05Z on the 27th and lands Dubai at 00:09 LOCAL on the 28th. */
+const RED_EYE_HOME = {
+  flights: [
+    leg("EZE", "GIG", "2026-08-27T01:25:00.000Z", "2026-08-27T03:58:56.000Z"),
+    leg("GIG", "DXB", "2026-08-27T06:05:00.000Z", "2026-08-27T20:09:36.000Z"),
+  ],
+};
+
+describe("a red-eye that lands at base after local midnight", () => {
+  it("leaves the morning it lands unmarked, and still calls the 27th the day she comes home", () => {
+    // Running the span to the landing marked the 28th away, and the duty-day fallback then
+    // labelled it "layover · DXB" — an outstation day at her own base, on a morning she spent
+    // asleep at home. That is what put "back on Thursday" a day out for the person waiting.
+    const days = tripDaysInMonth(awaySpans([OUT, RED_EYE_HOME], BASE), 2026, 8, "Asia/Dubai");
+
+    expect(days.has("2026-08-27")).toBe(true);
+    expect(days.has("2026-08-28")).toBe(false);
+    expect(
+      dutyDayMarks([OUT, RED_EYE_HOME], "Asia/Dubai", BASE, days.keys()).get("2026-08-27"),
+    ).toEqual({ kind: "return", code: "EZE" });
+  });
+});
+
+describe("calendarSpan", () => {
+  it("ends where she boards the leg that lands at base", () => {
+    expect(calendarSpan(RED_EYE_HOME.flights, BASE)).toEqual({
+      firstDepUtc: "2026-08-27T01:25:00.000Z",
+      endUtc: "2026-08-27T06:05:00.000Z",
+    });
+  });
+
+  it("ends at the landing when the trip does not reach base", () => {
+    expect(calendarSpan(OUT.flights, BASE)).toEqual({
+      firstDepUtc: "2026-08-22T02:30:00.000Z",
+      endUtc: "2026-08-22T20:15:00.000Z",
+    });
+  });
+
+  it("has nothing to span for a trip with no legs", () => {
+    expect(calendarSpan([], BASE)).toBeNull();
   });
 });

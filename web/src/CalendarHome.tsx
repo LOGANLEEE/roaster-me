@@ -20,6 +20,7 @@ import { digitsOf, getAirlinePrefix } from "./lib/airlinePrefix";
 import { useAirport } from "./lib/airports";
 import { CopyLayoverBrief } from "./CopyLayoverBrief";
 import { humanDateLabel } from "./lib/dateLabel";
+import { calendarSpan } from "./lib/dayMarks";
 import { MIN_LAYOVER_FREE_HOURS } from "./lib/layoverBrief";
 import { useDestinationSky, type Sky } from "./lib/useSky";
 import { HOME_BASE_IATA } from "./lib/homeBase";
@@ -184,11 +185,16 @@ function TrashIcon() {
  * underneath that. */
 function TripSummaryLines({
   legs,
+  homeTz,
   actions,
   showTimeline,
   sky,
 }: {
   legs: TripWithFlights["flights"];
+  /** Home base's zone. The header date is read in it, not in the departure station's, so the
+   * date on the card is the same date as the calendar cell the card sits under — a duty that
+   * leaves Buenos Aires on the 26th is the 27th's duty to everyone waiting in Dubai. */
+  homeTz: string;
   /** The destination's forecast for the landing day, when there is one. The field behind the
    * card carries the feel; this line carries the numbers, because a gradient cannot say 86%. */
   sky?: Sky | null;
@@ -213,12 +219,21 @@ function TripSummaryLines({
     lastLeg.dest === HOME_BASE_IATA &&
     localDateKey(firstLeg.depUtc, firstLeg.depTz) === localDateKey(lastLeg.arrUtc, lastLeg.arrTz);
 
-  // Length only earns a place on a pairing that actually spans days — "1 day" is noise.
-  const tripDays = new Set(legs.map((leg) => formatLocal(leg.depUtc, leg.depTz, { withDate: true }).slice(0, 6)))
-    .size;
-  // Weekday + day + month only: the year is never in question on a roster, and the +N on the
-  // arrival already says when a red-eye actually lands.
-  const depDate = formatLocal(firstLeg.depUtc, firstLeg.depTz, { withDate: true }).split(" ").slice(0, 3).join(" ");
+  // Length only earns a place on a pairing that actually spans days — "1 day" is noise. Counted
+  // over the same span the calendar paints, so the card and the grid never disagree about how
+  // many cells this duty owns.
+  const span = calendarSpan(legs, HOME_BASE_IATA);
+  const tripDays = span ? dayOffset(span.firstDepUtc, span.endUtc, homeTz, homeTz) + 1 : 1;
+  // Weekday + day + month only: the year is never in question on a roster. Read in the home
+  // zone so it matches the calendar day this card belongs to; the ARR row carries the landing
+  // date separately, which is the one a red-eye actually needs.
+  const depDate = formatLocal(firstLeg.depUtc, homeTz, { withDate: true }).split(" ").slice(0, 3).join(" ");
+  // "Fri 28" — weekday and day, in the zone the ARR time itself is read in, so the two halves
+  // of that row cannot describe different places.
+  const arrDayLabel = formatLocal(lastLeg.arrUtc, lastLeg.arrTz, { withDate: true })
+    .split(" ")
+    .slice(0, 2)
+    .join(" ");
   const duration = formatDuration(firstLeg.depUtc, lastLeg.arrUtc);
 
   return (
@@ -265,8 +280,14 @@ function TripSummaryLines({
         <div className="flex items-baseline justify-between py-1.5">
           <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">Arr</span>
           <span className="num text-base text-ink">
+            {/* The day it lands, spelled out, not a +N to add up. The person reading this is
+                waiting at an airport barrier and needs a date, and "+2" off a departure date
+                in another country is arithmetic nobody does correctly at 1am. Only when the
+                landing is on a different local day than the departure — otherwise it is noise. */}
+            {arrOffset !== 0 && (
+              <span className="text-ink-muted">{arrDayLabel} · </span>
+            )}
             {formatLocal(lastLeg.arrUtc, lastLeg.arrTz)}
-            {arrOffset > 0 && <sup className="text-xs text-ink-muted">+{arrOffset}</sup>}
           </span>
         </div>
       </div>
@@ -428,6 +449,7 @@ function DayDetailCard({
       <TripSummaryLines
         sky={sky}
         legs={legs}
+        homeTz={homeTz}
         showTimeline
         actions={
           readOnly ? null : (
@@ -808,11 +830,9 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
     const month = Number(monthStr);
     const found: TripWithFlights[] = [];
     for (const trip of trips) {
-      const legs = [...trip.flights].sort((a, b) => a.legSeq - b.legSeq);
-      const first = legs[0];
-      const last = legs[legs.length - 1];
-      if (!first || !last) continue;
-      const spanDays = tripDaysInMonth([{ firstDepUtc: first.depUtc, lastArrUtc: last.arrUtc }], year, month, homeTz);
+      const span = calendarSpan([...trip.flights].sort((a, b) => a.legSeq - b.legSeq), HOME_BASE_IATA);
+      if (!span) continue;
+      const spanDays = tripDaysInMonth([span], year, month, homeTz);
       if (spanDays.has(iso)) found.push(trip);
     }
     // Earliest departure first, so the morning duty reads above the evening one.
@@ -1027,7 +1047,7 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
           onClick={() => setSelectedIso(localDateKey(firstLeg.depUtc, firstLeg.depTz))}
           className="hairline stagger-2 flex flex-col gap-1 rounded-lg border border-edge bg-card p-4 text-left transition-colors duration-[120ms] hover:bg-raised"
         >
-          <TripSummaryLines legs={legs} sky={nextDutySky} showTimeline />
+          <TripSummaryLines legs={legs} homeTz={homeTz} sky={nextDutySky} showTimeline />
         </button>
       )}
     </div>

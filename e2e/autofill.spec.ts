@@ -75,14 +75,15 @@ const EK412_RETURN = {
  * (dayOffset 0) - EK9998 leg0 (BCN->DXB, dep 14:15 local, daily) operates that date.
  * EK9998 arr DXB 00:05 Asia/Dubai, dayOffset 1 -> local date 2026-09-16.
  *
- * One combined trip, 2 legs (leg_seq 0 = EK9997, leg_seq 1 = EK9998) - the whole round trip
- * away-spans 2026-09-15 through 2026-09-16 in Asia/Dubai (home base) local dates.
+ * One combined trip, 2 legs (leg_seq 0 = EK9997, leg_seq 1 = EK9998). The whole round trip is
+ * flown on 2026-09-15 in Asia/Dubai (home base) local dates; the inbound leg's wheels touch at
+ * 00:05 the next morning, which is a morning at home rather than another day away.
  */
 const TURNAROUND = {
   outbound: { flightNo: "EK9997", origin: "DXB", dest: "BCN" },
   appended: { flightNo: "EK9998", origin: "BCN", dest: "DXB" },
   pickedDate: "2026-09-15",
-  spanEndDate: "2026-09-16",
+  landingDate: "2026-09-16",
 };
 
 
@@ -165,7 +166,11 @@ test("manual-entry fallback (sequential adds), then EK384 multi-leg smoke", asyn
   await expect(page.getByTestId("delete-trip")).toBeVisible();
 
   await expect(page.getByTestId(`calendar-day-${TURNAROUND.pickedDate}`)).toHaveClass(/bg-accent-soft/);
-  await expect(page.getByTestId(`calendar-day-${TURNAROUND.spanEndDate}`)).toHaveClass(/bg-accent-soft/);
+  // EK9998 leaves Barcelona on the 15th and lands Dubai at 00:05 on the 16th, so the 16th is a
+  // morning at home and carries no mark. See e2e/red-eye-home.spec.ts for why.
+  await expect(page.getByTestId(`calendar-day-${TURNAROUND.landingDate}`)).not.toHaveClass(
+    /bg-accent-soft/,
+  );
 
   // ONE trip carrying both legs, not two trips — the whole point of appending before saving.
   const turnaround = await rosterTrips(page);

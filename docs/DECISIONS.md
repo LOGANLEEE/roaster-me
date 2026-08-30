@@ -8,6 +8,36 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-30
+
+### A finished alert stage stopped being a reason to skip an arrival refresh
+
+`GET /api/ingest/upcoming-arrivals` used to hide any flight whose `arrival_alert_stage` was `0`,
+on the reasoning that a flight which has announced its landing needs no more corrections. That
+reasoning holds only if the stored arrival is right — and it is the stored arrival the refresher
+exists to fix.
+
+EK248 on 2026-08-27 shows the loop. fr24's estimate walked `23:58 → 00:03 → 00:05 → 00:09`; the
+refresher wrote 00:09; the Worker's scan then claimed stage 0 against that stored time and
+pushed **"landing now"**. From the next run on, the log reads `nothing arriving in the next 4h`
+for a flight that was still in the air. It landed at 00:50. Forty-one minutes of drift that
+nothing could write, and a family told to leave for the airport early.
+
+Two changes, both in `worker/src/ingest.ts`:
+
+- **The time window is the only filter now.** A flight that really has landed leaves the window
+  on its own 20 minutes later, so keeping it costs one fr24 lookup, once.
+- **A correction re-arms the alerts only when the corrected arrival is still ahead of now.**
+  Removing the stage filter opened a path where fr24 reporting an already-past landing would
+  clear the stage and fire "landing now" at someone whose crew is already in the car. A
+  correction into the past is news, not an announcement.
+
+The 10-minute `isMaterialDrift` threshold is unchanged. It suppressed the last write before the
+freeze (00:09 → 00:16 is 7 minutes), but with the row staying visible the drift keeps
+accumulating until it crosses the threshold on its own. Lowering it would buy noise.
+
+---
+
 ## 2026-08-23 (later)
 
 ### The calendar and the day card were keyed in different time zones
@@ -389,8 +419,19 @@ forces, both tested:
   to "now" would invent days she may already be home for.
 
 The result is **unioned** with the existing per-trip spans, never substituted for them, so a
-roster the walk cannot interpret still marks everything it marked before. No day that is marked
-today can become unmarked.
+roster the walk cannot interpret still marks everything it marked before.
+
+**Amended: a span now closes where she boards the flight home, not where it lands.** Both
+sources agree on this, through `calendarSpan()` in the same file. The flight home routinely
+lands after midnight at base — EK248's wheels touched Dubai at 00:09 — and ending the span on
+the landing marked that whole morning away, then labelled it `· DXB`: a day down-route at her
+own home airport. The person waiting read the return arrow on the 27th and the band running
+through the 28th as "back on Thursday", when she walked in on Friday morning.
+
+This is the one case where a day that used to be marked is now blank, and it is deliberate. It
+does not weaken the union above: the layover days between two trips, which is what that union
+exists for, are untouched. Measured in `e2e/red-eye-home.spec.ts` against a real browser, and
+the same shape is asserted for the DXB↔BCN turnaround in `e2e/autofill.spec.ts`.
 
 A run of away days is drawn as one band: inner corners square off and the 0.5rem grid gap is
 bridged by an absolutely positioned child. The band breaks at the week edge, because it cannot
@@ -774,7 +815,17 @@ otherwise label them with an unrelated trip's station.
 ### Trip card: departure board + always-visible timeline (scroll-expand was removed)
 
 Collapsed, the card is a board: route headline, `flight · date`, then `REPORT` (amber) / `DEP` /
-`ARR` rows with the `+N` day offset, duration closing right-aligned.
+`ARR` rows, duration closing right-aligned.
+
+**Amended: `ARR` spells out the landing day (`Fri 28 · 00:09`); the `+N` superscript is gone.**
+`+N` counts from the *departure station's* date, so reading it meant taking a date in Argentina
+and adding two — arithmetic nobody does correctly at 1am, and this card's second reader is
+someone deciding when to leave for the airport. Shown only when the landing falls on a different
+local day than the departure; a same-day sector still shows the time alone.
+
+`flight · date` is read in the **home** zone for the same reason, so the date on the card is the
+date of the calendar cell it sits under. The length badge (`· 2 days`) counts the same span the
+calendar paints, so the card and the grid cannot disagree about how many cells a duty owns.
 
 **Scrolling past 60px collapses the calendar and expands the card into a day timeline** — leave
 home → report → departs → lands, with destination city and body-clock shift, and layover rows

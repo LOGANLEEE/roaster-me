@@ -344,12 +344,15 @@ export function monthGrid(year: number, month: number, _tz: string): MonthGridCe
 
 export type TripSpan = {
   firstDepUtc: string;
-  lastArrUtc: string;
+  /** Where the span stops. Usually the last arrival — but a caller that knows the trip ends at
+   * home base passes the moment she BOARDS the flight home instead, so a red-eye landing after
+   * local midnight does not claim the next morning as a day away. See `calendarSpan`. */
+  endUtc: string;
 };
 
 /**
  * Maps each local calendar date (in `homeTz`) covered by any trip's span (first departure to
- * last arrival) within the given `year`/`month` to "away" (fully covered day) or "partial"
+ * the span's end — see `TripSpan.endUtc`) within the given `year`/`month` to "away" (fully covered day) or "partial"
  * (the trip's first or last local day, when part of the day is spent outside the trip).
  * A single-day trip's only day is "away".
  */
@@ -364,10 +367,10 @@ export function tripDaysInMonth(
 
   for (const trip of trips) {
     const firstDayKey = localDateKeyFromEpoch(localDayEpoch(trip.firstDepUtc, homeTz));
-    const lastDayKey = localDateKeyFromEpoch(localDayEpoch(trip.lastArrUtc, homeTz));
+    const lastDayKey = localDateKeyFromEpoch(localDayEpoch(trip.endUtc, homeTz));
 
     let cursor = localDayEpoch(trip.firstDepUtc, homeTz);
-    const end = localDayEpoch(trip.lastArrUtc, homeTz);
+    const end = localDayEpoch(trip.endUtc, homeTz);
     const DAY_MS = 24 * 60 * 60 * 1000;
 
     while (cursor <= end) {
