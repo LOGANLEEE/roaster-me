@@ -118,6 +118,15 @@ export function useTripEntry({ pickedDate, homeTz, onSubmitted }: Options) {
    * step with the list's length.
    */
   const [finalLegIndex, setFinalLegIndex] = useState<number | null>(null);
+  /**
+   * Which leg she BOARDS. The mirror of `finalLegIndex`, and the one that decides what the
+   * picked date means: a roster dates a duty by the sector she flies, so "26 Aug EK248" from
+   * someone who joins at Rio puts the RIO departure on the 26th — the EZE sector the aircraft
+   * flew before she got on belongs to the 25th. Reading the picked date as leg 0's date
+   * regardless is what put a whole pairing a day late and had the calendar say she came home on
+   * Thursday for a Friday-morning arrival. Null (not 0) for the same reason as `finalLegIndex`.
+   */
+  const [boardingLegIndex, setBoardingLegIndex] = useState<number | null>(null);
   const [autofillFlightNo, setAutofillFlightNo] = useState<string | null>(null);
   const [lookupMiss, setLookupMiss] = useState(false);
   // True while a debounced schedule lookup's fetch is in flight (not during the debounce
@@ -174,6 +183,7 @@ export function useTripEntry({ pickedDate, homeTz, onSubmitted }: Options) {
           setAutofillLegs(autofillLegsFrom(pickedDate, candidate, result.legs));
           // A different flight number is a different routing — never carry a stale pick over.
           setFinalLegIndex(null);
+          setBoardingLegIndex(null);
           setAutofillFlightNo(candidate);
           setLookupMiss(false);
           // A new outbound lookup replaces whatever was previewed before, including any
@@ -258,6 +268,31 @@ export function useTripEntry({ pickedDate, homeTz, onSubmitted }: Options) {
     );
     setAppendedFlightNo(null);
     setAppendLookupMiss(false);
+  }
+
+  /**
+   * Picks the sector she boards, and slides the whole routing so that sector sits on the picked
+   * date. Re-derived through `legDatesFromPicked` rather than by adding days here, so the
+   * cross-midnight roll-forward rule stays in one tested place; the leg TIMES are passed back in
+   * as they currently stand, so a time the crew has already corrected by hand survives the move.
+   */
+  function setBoardingLeg(index: number) {
+    setAutofillLegs((prev) => {
+      if (!prev) return prev;
+      const dates = legDatesFromPicked(
+        pickedDate,
+        prev.map((leg) => ({
+          dayOffset: leg.dayOffset,
+          depLocal: leg.depTime,
+          arrLocal: leg.arrTime,
+        })),
+        index,
+      );
+      return prev.map((leg, i) => ({ ...leg, depDate: dates[i]! }));
+    });
+    setBoardingLegIndex(index);
+    // Boarding after the sector she had marked as her last would leave her working nothing.
+    setFinalLegIndex((last) => (last !== null && last < index ? index : last));
   }
 
   function updateAutofillLeg(index: number, patch: Partial<AutofillLegDraft>) {
@@ -351,13 +386,14 @@ export function useTripEntry({ pickedDate, homeTz, onSubmitted }: Options) {
       dayOffset: number;
     }[] = [];
 
-    // Everything after the chosen final destination is the aircraft's onward routing: stored so
-    // the routing stays true, flagged so no derived time (landing, report, day marks, alerts)
-    // counts it.
+    // Everything outside the sectors she works is the aircraft's own routing — what it flew to
+    // reach her, and where it goes after she gets off. Stored so the routing stays true, flagged
+    // so no derived time (landing, report, day marks, alerts) counts it.
+    const firstOperating = boardingLegIndex ?? 0;
     const lastOperating = finalLegIndex ?? autofillLegs.length - 1;
 
     for (const [index, leg] of autofillLegs.entries()) {
-      const operating = index <= lastOperating;
+      const operating = index >= firstOperating && index <= lastOperating;
       const depUtc = wallToUtc(
         `${leg.depDate}T${leg.depTime}:00`,
         leg.originTz,
@@ -487,6 +523,8 @@ export function useTripEntry({ pickedDate, homeTz, onSubmitted }: Options) {
     autofillLegs,
     finalLegIndex,
     setFinalLegIndex,
+    boardingLegIndex,
+    setBoardingLeg,
     autofillFlightNo,
     lookupMiss,
     resolving,

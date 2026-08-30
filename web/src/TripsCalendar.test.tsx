@@ -598,7 +598,7 @@ describe("TripsCalendar", () => {
     // background tab, or reduced motion will not run.
     expect(screen.getByText(/september 2026/i)).toBeInTheDocument();
     expect(trackOf(grid).style.transform).toBe("translate3d(-100%, 0, 0)");
-    expect(trackOf(grid).style.transition).toMatch(/transform 320ms/);
+    expect(trackOf(grid).style.transition).toMatch(/transform 480ms/);
   });
 
   it("glides back to centre after a drag too short to change the month", () => {
@@ -616,7 +616,7 @@ describe("TripsCalendar", () => {
 
     expect(screen.getByText(/august 2026/i)).toBeInTheDocument();
     expect(trackOf(grid).style.transform).toBe("translate3d(-100%, 0, 0)");
-    expect(trackOf(grid).style.transition).toMatch(/transform 320ms/);
+    expect(trackOf(grid).style.transition).toMatch(/transform 480ms/);
   });
 
   it("renders both neighbouring months, inert, so a drag reveals real days", () => {
@@ -661,7 +661,7 @@ describe("TripsCalendar", () => {
     await user.click(screen.getByTestId("calendar-next"));
 
     expect(screen.getByText(/september 2026/i)).toBeInTheDocument();
-    expect(track.style.transition).toMatch(/transform 320ms/);
+    expect(track.style.transition).toMatch(/transform 480ms/);
     expect(track.style.transform).toBe("translate3d(-100%, 0, 0)");
   });
 

@@ -8,6 +8,51 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-30 (later)
+
+### The picked date is the sector she flies, not the one the aircraft started on
+
+`legDatesFromPicked` read the picked date as leg 0's departure at the flight number's origin.
+That is only her duty date when she works the whole routing. EK248 is EZE→GIG→DXB; Isis worked
+it from Rio and her roster said "26 Aug", meaning the **Rio** departure. Anchored on leg 0 the
+app put Rio on the 27th and Dubai on the 28th — a day late, for a crew member who was home at
+00:50 on the 27th.
+
+The function now takes an `anchorIndex` and slides the whole routing so that leg sits on the
+picked date; legs before it date backwards. The gaps between legs stay exactly as the schedule
+fixes them — only which calendar day the run starts on is the picker's to decide.
+
+`Where do you get on?` in the add form is the mirror of the `Where do you get off?` panel that
+already existed, and the pair now covers the whole question: a multi-sector flight number is one
+aircraft routing, and the crew can join it and leave it anywhere along the way. The legs outside
+her duty are still saved with `operating: false` — `/api/trips` partitions on that flag and never
+puts them in `flights`, so the split works at either end for free.
+
+`TripLegsPanel` splits the two sides, because they are different facts: **"Aircraft arrives
+before you board"** above her duty, **"Aircraft continues without you"** below it. One heading
+for both would have been wrong half the time.
+
+**Not done:** the leg rows in the add preview still show times without dates. Showing the
+resolved date per leg would have let this be caught before saving rather than a week later. It is
+the cheaper half of the fix and it is still worth doing.
+
+### Motion was too subtle to read as motion
+
+All three entrances were tuned so far down that they read as flicker. `--duration-enter` 240ms →
+420ms, `fade-rise` travel 8px → 20px, the calendar's month settle 320ms → 480ms.
+
+The duty timeline animated only its **first three rows** — the numbered `.tl-enter-1/2/3` classes
+could not scale past what someone had written by hand. Every row now carries one `.tl-enter` and
+an inline `animationDelay` of `70ms * index`, clamped at 400ms so a long timeline still settles
+promptly.
+
+The reduced-motion structure is unchanged and load-bearing: `opacity: 0` and `animation-name`
+both live inside `@media (prefers-reduced-motion: no-preference)`, so under `reduce` the row gets
+neither. An inline `animation-delay` with no `animation-name` is inert, so the row simply renders
+present — never hidden, never mid-fade.
+
+---
+
 ## 2026-08-30
 
 ### A finished alert stage stopped being a reason to skip an arrival refresh

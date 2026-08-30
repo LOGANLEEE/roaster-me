@@ -65,8 +65,9 @@ const SWIPE_DIRECTIONAL_RATIO = 1.5;
 // tap it would otherwise leave behind, so releasing mid-gesture never also selects a day.
 const TAP_CANCEL_DISTANCE = 10;
 // The settle after a release. --ease-snap is the token the rest of the app uses for "arrives and
-// stops" motion; 320ms is long enough to read as travel at phone width without feeling slow.
-const SLIDE_TRANSITION = "transform 320ms var(--ease-snap)";
+// stops" motion; 480ms (was 320ms — too quick to read as a deliberate arrival, closer to a cut)
+// gives the swipe enough travel time to register at phone width without feeling slow.
+const SLIDE_TRANSITION = "transform 480ms var(--ease-snap)";
 // The track is a flex row whose three panels each take its full width and overflow it, so the
 // track's own box stays exactly one panel wide. Percentages in `translate` resolve against that
 // box — which is why centring the middle panel is -100%, not -33.33%. Measured, not assumed: at

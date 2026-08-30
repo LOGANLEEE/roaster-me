@@ -277,10 +277,21 @@ export type ScheduleLegOffset = {
  * 07:45, after leg 0's 06:00 arrival, so no extra roll - it departs on `pickedIso + 1` as
  * `dayOffset` alone already implies.
  *
+ * `anchorIndex` is which leg `pickedIso` describes — the first sector the crew member actually
+ * works, which is not always leg 0. A roster line dates a duty by the sector she flies, so
+ * "26 Aug EK248" from someone joining at Rio means the RIO departure is on the 26th, and the
+ * EZE sector the aircraft flew before she boarded belongs to the 25th. Anchoring on leg 0
+ * regardless put that duty a whole day late: Rio on the 27th, Dubai on the 28th, for a crew
+ * member who was home by 00:50 on the 27th. Legs before the anchor date backwards from it.
+ *
  * Returns one departure-date ISO string per leg, same order/length as `legs`.
  */
-export function legDatesFromPicked(pickedIso: string, legs: ScheduleLegOffset[]): string[] {
-  const depDates: string[] = [];
+export function legDatesFromPicked(
+  pickedIso: string,
+  legs: ScheduleLegOffset[],
+  anchorIndex = 0,
+): string[] {
+  const offsets: number[] = [];
   let cumulativeOffsetDays = 0;
   let prevArrLocal: string | null = null;
   for (const leg of legs) {
@@ -290,11 +301,15 @@ export function legDatesFromPicked(pickedIso: string, legs: ScheduleLegOffset[])
       // physically possible.
       cumulativeOffsetDays += 1;
     }
-    depDates.push(addDaysIso(pickedIso, cumulativeOffsetDays));
+    offsets.push(cumulativeOffsetDays);
     cumulativeOffsetDays += leg.dayOffset;
     prevArrLocal = leg.arrLocal;
   }
-  return depDates;
+  // Slide the whole routing so the anchor leg lands on `pickedIso`. The offsets BETWEEN legs
+  // are what the schedule fixes; which calendar day the run sits on is what the picked date
+  // decides, and it decides it about one leg.
+  const shift = offsets[anchorIndex] ?? 0;
+  return offsets.map((offset) => addDaysIso(pickedIso, offset - shift));
 }
 
 export type MonthGridCell = {

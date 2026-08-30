@@ -64,9 +64,10 @@ type TimelineRow = {
 
 /** The full duty detail (design "C"): Leave home -> Report -> (Departs -> Lands) per leg, with a
  * Layover row between legs. Sits below the REPORT/DEP/ARR board rows (TripSummaryLines) rather
- * than replacing them — always on screen for a trip day, no scroll or tap required. The first
- * three rows stagger in at 60/120/180ms (`.tl-enter`, tokens.css) on mount — under reduced
- * motion that class applies no animation at all, so the detail simply renders present. */
+ * than replacing them — always on screen for a trip day, no scroll or tap required. Every row
+ * stagger-enters (`.tl-enter`, tokens.css) at 70ms * index, capped at 400ms so a long timeline
+ * still finishes settling quickly — under reduced motion that class applies no animation at all,
+ * so the detail simply renders present. */
 function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
   const firstLeg = legs[0]!;
   const leaveHomeUtc = new Date(Date.parse(firstLeg.reportUtc) - LEAVE_HOME_LEAD_MS).toISOString();
@@ -128,7 +129,11 @@ function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
   return (
     <div data-testid="duty-timeline" className="mt-4 flex flex-col gap-3">
       {rows.map((row, i) => (
-        <div key={row.key} className={["flex items-start gap-3", i < 3 ? `tl-enter tl-enter-${i + 1}` : ""].join(" ")}>
+        <div
+          key={row.key}
+          className="tl-enter flex items-start gap-3"
+          style={{ animationDelay: `${Math.min(i * 70, 400)}ms` }}
+        >
           {/* w-12 (48px), not w-11 (44px): "00:00" at 5 tabular-num chars needs the extra
               margin so it never clips against a fallback monospace font's advance width. */}
           <span className="num w-12 shrink-0 text-sm text-ink-muted">{row.time}</span>
