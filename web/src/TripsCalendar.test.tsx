@@ -273,7 +273,10 @@ describe("TripsCalendar", () => {
     expect(onPickDay).toHaveBeenCalledWith("2026-08-10");
   });
 
-  it("does not call onPickDay when tapping a past day with no trip", async () => {
+  it("opens a past day with no trip, so a duty can be recorded after it is flown", async () => {
+    // This used to be inert. A roster is a record as much as a plan, and the day a duty was
+    // flown is behind you by the time you type it up. The rule stranded a real correction: a
+    // wrongly-dated pairing was deleted and then could not be entered again.
     const user = userEvent.setup();
     const onPickDay = vi.fn();
     render(
@@ -286,7 +289,7 @@ describe("TripsCalendar", () => {
     );
 
     await user.click(screen.getByTestId("calendar-day-2026-08-01"));
-    expect(onPickDay).not.toHaveBeenCalled();
+    expect(onPickDay).toHaveBeenCalledWith("2026-08-01");
   });
 
   it("navigates to the next and previous month via chevrons", async () => {
