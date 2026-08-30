@@ -9,12 +9,11 @@ type Props = {
   now: Date;
   trips: TripWithFlights[];
   homeTz: string;
-  /** Called for any day tap in non-picker mode (empty or trip day, current or past-with-trip)
-   * — the caller owns select-vs-open-sheet semantics. In picker mode, called for future days
-   * only (date-picker behavior). */
+  /** Called for ANY day tap — past or future, empty or with a duty on it. The caller owns
+   * select-vs-open-sheet semantics. */
   onPickDay: (isoDate: string) => void;
   /** "picker": pure date-picker mode for the add-trip stepper - no trip markers, no open-trip
-   * behavior, but today-gating (future days only) stays the same as the default trip view. */
+   * behavior. Nothing passes this today; the inline add form replaced the stepper. */
   mode?: "picker";
   /** ISO dates added this rapid-entry session but not yet reflected in `trips` (no refetch
    * happened yet) — marked on the grid like a trip day, but tapping still opens the add flow
@@ -173,16 +172,7 @@ export default function TripsCalendar({
         dayMarks.set(iso, "away");
     }
 
-    // Per-day trip lookup for the click handler: which trip (if any) covers a given ISO date.
-    const tripByDay = new Map<string, TripWithFlights>();
-    for (const span of tripSpans) {
-      const spanDays = tripDaysInMonth([span], year, month, homeTz);
-      for (const iso of spanDays.keys()) {
-        if (!tripByDay.has(iso)) tripByDay.set(iso, span.trip);
-      }
-    }
-
-    return { year, month, grid, dayMarks, dutyMarks, tripByDay };
+    return { year, month, grid, dayMarks, dutyMarks };
   }
 
   const previous = shiftMonth(viewYear, viewMonth, -1);
@@ -192,7 +182,6 @@ export default function TripsCalendar({
     buildMonth(viewYear, viewMonth),
     buildMonth(next.year, next.month),
   ];
-  const tripByDay = panels[1]!.tripByDay;
 
   // Swipe state lives in refs, not useState — it's read/written only inside pointer handlers on
   // the same render, never needs to trigger a re-render itself. The track's transform is written
@@ -334,16 +323,8 @@ export default function TripsCalendar({
     }
   }
 
-  function handleDayClick(iso: string) {
-    if (isPicker) {
-      if (iso >= today) onPickDay(iso);
-      return;
-    }
-    const trip = tripByDay.get(iso);
-    if (trip || iso >= today) {
-      onPickDay(iso);
-    }
-  }
+  // Every day is open now, past included, so the tap handler is `onPickDay` itself — see the
+  // note on `disabled` below for why the forward-only rule went.
 
   return (
     // w-full, not shrink-to-fit: the grid is dropped into both a stretched column (trips) and
@@ -420,7 +401,16 @@ export default function TripsCalendar({
                   const mark = panel.dayMarks.get(cell.iso);
                   const hasTrip = mark !== undefined;
                   const duty = panel.dutyMarks.get(cell.iso);
-                  const disabled = !hasTrip && isPast;
+                  // No day is closed any more. A past day with nothing on it used to be inert,
+                  // which is fine for a date picker choosing a flight to come and wrong for a
+                  // roster: a duty is usually typed up after it is flown, so its day is already
+                  // behind you. Nothing downstream ever objected — the schedule lookup does not
+                  // read the direction of the date, `/api/trips` stores any `depUtc`, and both
+                  // alert scans search forward from now, so a past duty simply never matches
+                  // them. The one thing the rule reliably did was strand a correction: a
+                  // wrongly-dated pairing, once deleted, could not be entered again.
+                  // Past days stay dimmed (`opacity-60`), because "behind you" is still worth
+                  // seeing — they are just no longer unreachable.
 
                   // A run of away days is drawn as ONE band, not as neighbouring boxes that
                   // happen to share a colour: inner corners square off and the 0.5rem grid gap is
@@ -456,7 +446,6 @@ export default function TripsCalendar({
                       data-testid={
                         isCurrent ? `calendar-day-${cell.iso}` : undefined
                       }
-                      disabled={disabled}
                       aria-label={
                         duty
                           ? `${cell.day} ${DAY_LABEL[duty.kind]} ${duty.code}`
@@ -464,7 +453,7 @@ export default function TripsCalendar({
                       }
                       aria-current={isToday ? "date" : undefined}
                       aria-pressed={isSelected}
-                      onClick={() => handleDayClick(cell.iso)}
+                      onClick={() => onPickDay(cell.iso)}
                       className={[
                         "relative flex min-h-[52px] flex-col items-center justify-center gap-0.5 border py-2 transition-[background-color,border-color,transform] duration-[120ms]",
                         corners,
@@ -483,9 +472,7 @@ export default function TripsCalendar({
                         !cell.inMonth ? "opacity-40" : "",
                         isPast && !hasTrip ? "opacity-60" : "",
                         // Press feedback: transform only, so a pressed cell never nudges its neighbours.
-                        disabled
-                          ? "cursor-default"
-                          : "hover:bg-raised active:scale-[0.96]",
+                        "hover:bg-raised active:scale-[0.96]",
                       ].join(" ")}
                     >
                       {joinsRight ? (

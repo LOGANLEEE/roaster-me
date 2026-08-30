@@ -8,6 +8,38 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-30 (latest)
+
+### A day that has already passed can be filled in
+
+Every past day with no duty on it was `disabled`, and `handleDayClick` refused any `iso < today`.
+That is date-picker convention — you pick a *future* flight — and a roster is not a date picker.
+A duty is usually typed up after it is flown, so the day it belongs to is behind you by then.
+
+Nothing downstream ever objected, checked before changing it rather than assumed:
+
+- `GET /api/schedule/lookup` reads the weekday and validity window of the date given
+  (`worker/src/schedule.ts:323-329`); it never reads which side of today it falls on.
+- `POST /api/trips` stores whatever `depUtc` it is handed — `LegInputSchema` has
+  `depUtc: z.string().datetime()` and no bound.
+- Both alert scans search strictly forward: `gte(reportUtc, nowIso)` and
+  `gte(arrUtc, windowStartIso)` (`worker/src/report-scan.ts`). A past duty never matches them,
+  so recording one cannot fire a push about a flight that has already landed.
+
+What the rule *did* do was strand a correction. A pairing entered with the wrong dates was
+deleted, and then could not be entered again — the only way back was to wait for the date to
+become the future, which it never does.
+
+Past days stay dimmed at `opacity-60`. Behind you is still worth seeing; it is just no longer
+unreachable.
+
+Two things went with it, both orphaned by the change rather than tidied opportunistically:
+`tripByDay` (built per month, read only by the gate) and `handleDayClick` itself, now that the
+tap is `onPickDay`. The `mode="picker"` prop is left in place but **nothing passes it** — the
+inline add form replaced the stepper it was built for.
+
+---
+
 ## 2026-08-30 (later)
 
 ### The picked date is the sector she flies, not the one the aircraft started on
