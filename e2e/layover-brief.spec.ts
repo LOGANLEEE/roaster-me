@@ -63,7 +63,10 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
 
   // --- The middle day: no duty, and the panel is the only thing on it worth reading. ---
   await pickCalendarDay(page, LAYOVER_DAY);
+  // "No duty" is true and, on its own, was read as a blank day — directly above a panel headed
+  // "Layover · Sydney". The line says where she actually is now.
   await expect(page.getByTestId("day-detail-card")).toContainText(/no duty/i);
+  await expect(page.getByTestId("day-detail-card")).toContainText(/down-route in Sydney/i);
 
   // A layover day has no leg DEPARTING on it, so it falls into the empty-day branch — but it is
   // not a free day. Opening the add form here put the cursor straight into the flight-number box

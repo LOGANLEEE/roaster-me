@@ -53,6 +53,27 @@ function StationLine({ iata, shift }: { iata: string; shift?: number }) {
   );
 }
 
+/** The date line on a day with no duty on it but a layover under it. "— no duty" alone sat
+ * directly above a panel headed "Layover · Buenos Aires" and read as a blank day, which is the
+ * same misreading that had the add form opening here uninvited. Resolves the city through
+ * `useAirport` like StationLine does, and falls back to the bare IATA until it lands. */
+function DownRouteLine({
+  isoDate,
+  homeTz,
+  station,
+}: {
+  isoDate: string;
+  homeTz: string;
+  station: string;
+}) {
+  const airport = useAirport(station);
+  return (
+    <p className="text-sm text-ink-muted">
+      {humanDateLabel(isoDate, homeTz)} — no duty, down-route in {airport?.city ?? station}
+    </p>
+  );
+}
+
 type TimelineRow = {
   key: string;
   time: string;
@@ -425,7 +446,11 @@ function DayDetailCard({
   if (!trip || !firstLeg) {
     return (
       <div data-testid="day-detail-card" className="hairline flex flex-col gap-3 rounded-lg border border-edge bg-card p-4">
-        <p className="text-sm text-ink-muted">{humanDateLabel(isoDate, homeTz)} — no duty</p>
+        {layoverRest ? (
+          <DownRouteLine isoDate={isoDate} homeTz={homeTz} station={layoverRest.station} />
+        ) : (
+          <p className="text-sm text-ink-muted">{humanDateLabel(isoDate, homeTz)} — no duty</p>
+        )}
         {/* The day in the middle of a layover: no duty, and the one she is most likely to be
             planning. "No duty" alone is true and useless here. */}
         {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
@@ -1018,7 +1043,10 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
           className="hairline stagger-1 flex flex-col gap-3 rounded-lg border border-edge bg-card p-4"
         >
           <div className="flex items-baseline justify-between">
-            <p className="text-sm text-ink">Trip · {activePairing.progress.totalDays} days</p>
+            <p className="text-sm text-ink">
+              Trip · {activePairing.progress.totalDays}{" "}
+              {activePairing.progress.totalDays === 1 ? "day" : "days"}
+            </p>
             <p className="num text-sm text-ink-muted">
               day {activePairing.progress.currentDay} of {activePairing.progress.totalDays}
             </p>

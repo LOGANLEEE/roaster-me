@@ -40,8 +40,15 @@ They now get the same treatment: `+ Add a duty` first, form on request. Asking f
 focuses the input — the keyboard is right when it was asked for and wrong when it was not. The
 empty-day card is keyed on `isoDate` so "I asked on THIS day" does not follow her to the next.
 
-**Left alone:** the card still opens with "— no duty" on a layover day, which is true and unhelpful
-next to a panel saying "Layover · Buenos Aires". Naming the station there is a separate change.
+The card's own date line said "— no duty" directly above a panel headed "Layover · Buenos Aires",
+which is the same misreading in words that the open form was making in behaviour. On a layover
+day it now reads "— no duty, down-route in Buenos Aires", resolving the city through `useAirport`
+exactly as `StationLine` does and falling back to the bare IATA until it lands. Every existing
+assertion matches `/no duty/i` and still passes.
+
+While here: `Trip · {totalDays} days` on the in-progress card was unconditional, so a turnaround
+read "Trip · 1 days". Pluralised. It has been wrong for as long as the card has existed and was
+only ever visible on a one-day trip that is happening right now.
 
 ### The add form shows the date each leg resolves to
 
