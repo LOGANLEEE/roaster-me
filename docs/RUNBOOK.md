@@ -282,6 +282,24 @@ export CLOUDFLARE_ACCOUNT_ID=08d39249abaa892047690aa4c0c34b3a
 `logan@example.com` / `123123`. Any other address gets a random code, readable at
 `/api/__e2e/last-otp?email=…`.
 
+## When e2e fails in CI and passes on a re-run
+
+Do not call it flake. Read the trace — it is already uploaded.
+
+```bash
+gh run download <run-id> --repo LOGANLEEE/danyeowa --name playwright-report --dir /tmp/ci
+unzip -o /tmp/ci/test-results/<spec-dir>/trace.zip -d /tmp/ci/unz
+```
+
+`0-trace.trace` is JSON-per-line: `type=before` entries are the actions with timings, `type=log`
+is Playwright's own reasoning ("element is not stable", "click action done"), and
+`type=frame-snapshot` holds the DOM after each one. `error-context.md` beside it is the page at
+the moment of failure.
+
+That is how the 2026-08-31 "flake" was named in one read: the click was performed and the day
+still read `aria-pressed="false"`, because the month-slide animation was still running. See
+`DECISIONS.md`. **A re-run passing is not evidence about the cause.**
+
 ## When a change seems to have no effect
 
 A stale `wrangler dev` keeps the port and serves an old bundle. `workerd` can respawn after its

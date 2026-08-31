@@ -395,6 +395,11 @@ export default function TripsCalendar({
       >
         <div
           ref={trackRef}
+          // Addressable so a test can wait for the month slide to finish. A day cell inside a
+          // moving track is not where its bounding box says it is, and Playwright's own
+          // stability check does not catch it: the ease-snap curve moves sub-pixel amounts for
+          // the last stretch, which reads as "stable" while the cell is still travelling.
+          data-testid="calendar-track"
           className="flex will-change-transform"
           style={{ transform: TRACK_BASE }}
         >
