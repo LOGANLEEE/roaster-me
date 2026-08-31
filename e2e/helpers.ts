@@ -70,6 +70,32 @@ export const EK412 = {
  * detail card on the calendar-home grid — for an empty day that card IS the add-trip form
  * (no second tap, no sheet); use `openAddForm` to also wait for that form to be ready.
  */
+/**
+ * Waits out the calendar's month slide.
+ *
+ * Stepping a month animates the whole track for 480ms, and a day cell inside it is NOT where its
+ * bounding box says it is: measured 2026-08-31 against a local build, a press on the cell's own
+ * reported box landed on `<html>` and selected nothing — 10 times out of 10 during the slide, and
+ * 0 times out of 10 once it had settled.
+ *
+ * Playwright's own actionability check does not save you here. It reported "element is visible,
+ * enabled and stable" and clicked, and the click was still lost: `--ease-snap` moves sub-pixel
+ * amounts through the tail of the curve, which samples as stable while the cell is travelling.
+ * That is what blocked three deploys on 2026-08-31 — `crew.spec` steps a month and immediately
+ * asks for the add form, and the whole failing sequence took 200ms.
+ *
+ * Two frames first, so a transition that has only just been committed is registered before the
+ * list is read. Under reduced motion the transition is switched off entirely and the empty list
+ * is a legitimate "already settled".
+ */
+async function waitForMonthSettled(page: Page): Promise<void> {
+  await page.getByTestId("calendar-track").evaluate(async (track) => {
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    await Promise.all(track.getAnimations().map((a) => a.finished.catch(() => undefined)));
+  });
+}
+
 export async function pickCalendarDay(page: Page, iso: string): Promise<void> {
   for (let i = 0; i < 24; i++) {
     const cell = page.getByTestId(`calendar-day-${iso}`);
@@ -78,6 +104,7 @@ export async function pickCalendarDay(page: Page, iso: string): Promise<void> {
       return;
     }
     await page.getByTestId("calendar-next").click();
+    await waitForMonthSettled(page);
   }
   throw new Error(
     `calendar-day-${iso} never became visible after 24 months of navigation`,

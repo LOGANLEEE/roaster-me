@@ -8,6 +8,62 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31 (calendar taps during the month slide)
+
+### The e2e suite was not flaky. A click during the month slide is genuinely lost.
+
+`crew.spec` failed on three CI runs in one afternoon and blocked two deploys, always at
+`openAddForm` waiting for the add form. Every time, a re-run went green. The tempting reading —
+"workerd dies, it is environmental" — is the one `docs/` already warns against, and it was wrong
+again.
+
+**The trace named it, exactly as the runbook says it would.** From the failing run's
+`playwright-report` artifact:
+
+    3.1s  isVisible  calendar-day-2026-09-10     <- false, August is showing
+    3.1s  click      calendar-next
+    3.1s  isVisible  calendar-day-2026-09-10     <- true
+    3.1s  click      calendar-day-2026-09-10     <- "click action done"
+    3.3s  waitFor    flightno-input              <- never appears
+
+and the DOM snapshot taken after that click still reads `aria-pressed="false"` on the cell. The
+click was performed and the day was not selected. The whole sequence took 200ms; nothing was slow.
+
+**Reproduced deterministically, with a control.** Same build, same machine, one variable:
+
+    press on the cell's own bounding box, mid-slide  ->  selected 0 / 10
+    press 600ms later, after it settles              ->  selected 10 / 10
+
+Event listeners say why: mid-slide the press lands on `<html>`. Not the cell, not the grid — the
+document. `boundingBox()` reports where the cell was, the 480ms `--ease-snap` transform keeps
+moving it, and the ancestor's `overflow:hidden` means the reported point is over nothing at all.
+
+**Playwright's actionability check does not catch this**, which is what made it look like flake.
+It logged "element is visible, enabled and stable" and clicked anyway: the tail of the ease-snap
+curve moves sub-pixel amounts per frame, which samples as stable while the cell is still
+travelling.
+
+**Fix: `pickCalendarDay` waits out the slide** (`waitForMonthSettled` in `e2e/helpers.ts`, keyed
+on the new `calendar-track` test id, via `getAnimations().finished`). Verified by the same
+control, with the wait swapped in: 10 / 10.
+
+**Deliberately NOT changed: the app.** A tap during the slide does nothing, and that is defensible
+— it is what a native calendar does, the window is 480ms, and it was measured NOT to select the
+wrong day. Two frames of `requestAnimationFrame` come first in the wait so a transition committed
+in the same tick is registered before the list is read; under reduced motion the transition is
+switched off and the empty list is a legitimate "already settled".
+
+**The method note worth keeping.** Three failures with three different shapes read as noise, and
+"the retry passes" is not evidence about the cause. The evidence already existed: `trace:
+"retain-on-failure"` is on and CI uploads `playwright-report`, so
+
+    gh run download <run-id> --name playwright-report --dir .
+    unzip test-results/<spec>/trace.zip
+
+was one command away the whole time, and named the cause in one read.
+
+---
+
 ## 2026-08-31 (card cleanup)
 
 ### Report time is off the card entirely, and "Leave home" with it
