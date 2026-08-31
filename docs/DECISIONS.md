@@ -88,6 +88,27 @@ Three defects, none of which could be seen from the database alone:
 which is the push service accepting the message, not a phone showing it. The only end-to-end check
 is `/api/push/test` from the device.
 
+That check was then run, from the phone that owns the one subscription:
+
+    {"sent":0,"subscriptions":1,"expiredRemoved":0,"failedWithStatus":[400]}
+
+**So there is a fourth cause, and it is upstream of all three above: Apple is rejecting the send
+outright.** Not 404/410 — the subscription is alive; the request is being refused. Combined with
+the subscription count, the honest reading is that **no push from this app has been delivered to
+anyone**, and every `report_notified_at` in the table records a send that a push service accepted
+or refused, never a notification a person saw.
+
+`400` does not name a cause. Apple returns it for a malformed VAPID JWT, a `k=` it will not
+accept, and a body it will not accept. **The response body says which, and `sendPush` was
+throwing it away** — so the next step is not a guess at the JWT, it is reading what Apple
+actually said. `SendPushResult` gains `detail`, `/api/push/test` returns `failed: [{status,
+detail}]`, and the `console.warn` carries it.
+
+What is NOT established: whether this ever worked. The subscription was registered 2026-08-10,
+nothing logged failures before today, and the 400 is a measurement from 2026-08-31 only.
+
+Do not "fix" the JWT from a symptom. Read the body first.
+
 Not fixed here, because it is not a code problem: the crew member's phone has never granted
 notification permission. Nothing in the Worker can create a subscription she did not accept.
 

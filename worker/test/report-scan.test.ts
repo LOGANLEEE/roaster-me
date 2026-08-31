@@ -280,6 +280,46 @@ describe("runReportScan", () => {
     vi.unstubAllGlobals();
   });
 
+  it("carries the push service's own error text out of a failed send", async () => {
+    // /api/push/test answered `failedWithStatus: [400]` from Apple on 2026-08-31 and there was
+    // nothing to do with it — 400 covers a malformed JWT, a bad `k=`, and a body the service
+    // will not accept. The status was all the code kept; the reason was thrown away.
+    const userId = await makeUser("report-scan-detail@example.com");
+    await addSubscription(userId, "https://web.push.example.com/rejects-us");
+    await insertFlight({
+      userId,
+      reportUtc: new Date(NOW_MS + 60 * 60 * 1000).toISOString(),
+    });
+
+    const testEnv = await testVapidEnv();
+    const warnings: string[] = [];
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args) => {
+      warnings.push(args.join(" "));
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("BadJwtToken", { status: 400 })),
+    );
+
+    await runReportScan(testEnv, NOW_MS);
+
+    const line = warnings.find((w) => w.startsWith("[push] send failed"));
+    expect(line).toContain("status=400");
+    expect(line).toContain("BadJwtToken");
+    // Host only. The endpoint's path segment is the subscription's bearer credential and must
+    // never reach a log anyone with log access can read.
+    expect(line).toContain("host=web.push.example.com");
+    expect(line).not.toContain("rejects-us");
+
+    // Let it through once. This file shares one database, and the release above leaves the
+    // flight a live candidate — every later test's fetch-call count would pick it up.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 201 })));
+    await runReportScan(testEnv, NOW_MS + 1000);
+
+    warnSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it("puts the claim back when every send fails for a reason that is not an expiry", async () => {
     // 404/410 means the subscription is dead and gets deleted. A 500 means the push service had
     // a bad minute — and that used to burn the flight exactly as hard as a successful send.

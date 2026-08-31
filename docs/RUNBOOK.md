@@ -202,8 +202,14 @@ file — the plists never mention it.
 https://danyeowa.com/api/push/test
 ```
 
-Returns `{"sent":1,...}` on success. `failedWithStatus` carries the push service's HTTP status;
-404/410 means the subscription expired and it has been removed.
+Returns `{"sent":1,...}` on success. `failed` carries `{status, detail}` per device — `detail`
+is the push service's own error text, which is the part that names a cause. 404/410 means the
+subscription expired and it has been removed.
+
+A status on its own is not a diagnosis. On 2026-08-31 this route answered
+`{"sent":0,"subscriptions":1,"failedWithStatus":[400]}` and there was nothing to act on: Apple
+returns 400 for a malformed VAPID JWT, a bad `k=`, and a body it will not accept. The body is now
+kept and logged.
 
 Alerts are driven by the Worker's cron (`*/15`), which runs both scans:
 
