@@ -29,10 +29,6 @@ import TripLegsPanel from "./TripLegsPanel";
 import TripsCalendar from "./TripsCalendar";
 import { useTripEntry } from "./useTripEntry";
 
-/** Lead time for "Leave home" ahead of report — ported from the old CrewHome's next-duty card
- * (see git history: af7cc4c). */
-const LEAVE_HOME_LEAD_MS = 55 * 60 * 1000;
-
 /** City name for `iata`, once `useAirport` resolves it — falls back to the bare code otherwise
  * (including forever, on a failed lookup), so a slow or broken airport fetch never blocks the
  * timeline's first paint or breaks the card. `shift`, when given, appends the clock-shift
@@ -83,33 +79,20 @@ type TimelineRow = {
   sub?: React.ReactNode;
 };
 
-/** The full duty detail (design "C"): Leave home -> Report -> (Departs -> Lands) per leg, with a
- * Layover row between legs. Sits below the REPORT/DEP/ARR board rows (TripSummaryLines) rather
- * than replacing them — always on screen for a trip day, no scroll or tap required. Every row
+/** The full duty detail (design "C"): (Departs -> Lands) per leg, with a Layover row between
+ * legs.
+ *
+ * NO REPORT ROW, and none on the board either — removed 2026-08-31 at the user's call. A crew
+ * member's own airline app already gives her report and e-gate, so this card was restating a
+ * number she reads somewhere more authoritative. Report time is still stored, still drives the
+ * push alert, and still sets "free until report" on the layover panel; it just isn't printed
+ * here. The first Departs row inherits the origin's station line, which the report row used to
+ * carry. Every row
  * stagger-enters (`.tl-enter`, tokens.css) at 70ms * index, capped at 400ms so a long timeline
  * still finishes settling quickly — under reduced motion that class applies no animation at all,
  * so the detail simply renders present. */
 function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
-  const firstLeg = legs[0]!;
-  const leaveHomeUtc = new Date(Date.parse(firstLeg.reportUtc) - LEAVE_HOME_LEAD_MS).toISOString();
-
-  const rows: TimelineRow[] = [
-    {
-      key: "leave-home",
-      time: formatLocal(leaveHomeUtc, firstLeg.depTz),
-      icon: "○",
-      iconTone: "text-ink-muted",
-      label: "Leave home",
-    },
-    {
-      key: "report",
-      time: formatLocal(firstLeg.reportUtc, firstLeg.depTz),
-      icon: "●",
-      iconTone: "text-report",
-      label: "Report",
-      sub: <StationLine iata={firstLeg.origin} />,
-    },
-  ];
+  const rows: TimelineRow[] = [];
 
   legs.forEach((leg, index) => {
     if (index > 0) {
@@ -134,7 +117,12 @@ function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
       iconTone: "text-ink",
       label: "Departs",
       sub: (
-        <p className="num text-sm text-ink-muted">{formatDuration(leg.depUtc, leg.arrUtc)} airborne</p>
+        <>
+          {/* Only the first sector: after that, the Lands and Layover rows above have already
+              named the station she is leaving from. */}
+          {index === 0 && <StationLine iata={leg.origin} />}
+          <p className="num text-sm text-ink-muted">{formatDuration(leg.depUtc, leg.arrUtc)} airborne</p>
+        </>
       ),
     });
     rows.push({
@@ -214,6 +202,7 @@ function TripSummaryLines({
   homeTz,
   actions,
   showTimeline,
+  timelineKey,
   sky,
 }: {
   legs: TripWithFlights["flights"];
@@ -230,6 +219,14 @@ function TripSummaryLines({
    * day-detail card for a trip day. Omitted for the compact next-duty preview card, which
    * stays board-only. */
   showTimeline?: boolean;
+  /** Remounts the timeline when it changes, so the stagger plays again.
+   *
+   * A CSS entry animation fires once per ELEMENT, and a multi-day pairing renders the same
+   * trip (same `trip.id`, so the same card, so the same rows) on every day it spans. Tapping
+   * 1 Sept then 2 Sept therefore replayed nothing at all: React kept the DOM nodes and only
+   * the layover panel below them changed. Passing the day here gives each day its own rows.
+   * Undefined on the next-duty preview card, which mounts once and has no day to key on. */
+  timelineKey?: string;
 }) {
   const firstLeg = legs[0]!;
   const lastLeg = legs[legs.length - 1]!;
@@ -290,15 +287,16 @@ function TripSummaryLines({
         {actions}
       </div>
 
-      {/* Board rows: label left (small, uppercase, tracked, muted — amber for REPORT since
-          that's the one time worth flagging), value right (tabular). Dashed hairlines between
-          rows read as the split-flap rule this direction is named for; a justify-between row
-          never collides at 390px the way the old rail's centered duration badge did. */}
+      {/* Board rows: label left (small, uppercase, tracked, muted), value right (tabular). Dashed
+          hairlines between rows read as the split-flap rule this direction is named for; a
+          justify-between row never collides at 390px the way the old rail's centered duration
+          badge did.
+
+          DEP and ARR only. REPORT used to head this board and was also the second row of the
+          timeline below it, at the same time, in the same zone — on a single-sector duty three
+          of the board's rows were a second printing of the timeline. The timeline keeps it,
+          amber, because that is where it sits in the order she lives the day. */}
       <div className="mt-4 flex flex-col divide-y divide-dashed divide-edge">
-        <div className="flex items-baseline justify-between py-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-report">Report</span>
-          <span className="num text-base text-report">{formatLocal(firstLeg.reportUtc, firstLeg.depTz)}</span>
-        </div>
         <div className="flex items-baseline justify-between py-1.5">
           <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">Dep</span>
           <span className="num text-base text-ink">{formatLocal(firstLeg.depUtc, firstLeg.depTz)}</span>
@@ -320,7 +318,7 @@ function TripSummaryLines({
 
       {duration && <p className="num mt-1.5 text-right text-sm text-ink-muted">{duration}</p>}
 
-      {showTimeline && <TripTimeline legs={legs} />}
+      {showTimeline && <TripTimeline key={timelineKey} legs={legs} />}
     </>
   );
 }
@@ -497,6 +495,7 @@ function DayDetailCard({
         legs={legs}
         homeTz={homeTz}
         showTimeline
+        timelineKey={isoDate}
         actions={
           readOnly ? null : (
           // Out of the reading path: the card is read far more often than it is edited.

@@ -262,7 +262,23 @@ export const __testing = {
 
 export type SendPushResult =
   | { ok: true }
-  | { ok: false; status: number; expired: boolean };
+  | {
+      ok: false;
+      status: number;
+      expired: boolean;
+      /**
+       * The push service's own explanation, truncated.
+       *
+       * Discarded until 2026-08-31, which is why a real 400 from Apple was indistinguishable
+       * from every other reason a notification might not arrive. A status code alone does not
+       * name a cause — 400 covers a malformed JWT, a bad `k=`, a body the service will not
+       * accept, and more. The body says which.
+       */
+      detail: string;
+    };
+
+/** Push services answer with a short reason string; anything longer is not worth a log line. */
+const MAX_FAILURE_DETAIL = 200;
 
 // RFC 8291's aes128gcm framing adds a fixed 86-byte header (16 salt + 4 record-size +
 // 1 keyid-len + 65 keyid) plus a 16-byte GCM tag and a 1-byte padding delimiter to the
@@ -311,5 +327,34 @@ export async function sendPush(
   });
 
   if (res.ok) return { ok: true };
-  return { ok: false, status: res.status, expired: res.status === 404 || res.status === 410 };
+
+  // The one place a failed push leaves a trace. Every caller used to swallow a non-expiry
+  // failure silently: nothing in D1 and nothing in the logs, so "the alert never arrived" and
+  // "the push service rejected it" looked identical from the outside. `observability` is on in
+  // wrangler.jsonc, so this lands in Workers Logs.
+  //
+  // Host only, never the full endpoint — the path segment is the subscription's bearer
+  // credential and would be readable by anyone with log access.
+  const host = (() => {
+    try {
+      return new URL(subscription.endpoint).host;
+    } catch {
+      return "unparseable-endpoint";
+    }
+  })();
+  // A body this side of the wire is the service's error text, not user data. Reading it cannot
+  // fail the send — it has already failed — so a body that will not decode is not worth
+  // throwing over.
+  const detail = await res
+    .text()
+    .then((text) => text.trim().slice(0, MAX_FAILURE_DETAIL))
+    .catch(() => "");
+  console.warn(`[push] send failed status=${res.status} host=${host} detail=${detail || "(empty)"}`);
+
+  return {
+    ok: false,
+    status: res.status,
+    expired: res.status === 404 || res.status === 410,
+    detail,
+  };
 }

@@ -169,6 +169,8 @@ describe("runReportScan", () => {
       notified: 0,
       skippedOutsideLead: 0,
       expiredSubscriptionsRemoved: 0,
+      skippedNoSubscription: 0,
+      releasedAfterSendFailure: 0,
     });
   });
 
@@ -241,6 +243,110 @@ describe("runReportScan", () => {
 
     const [flightRow] = await db().select().from(schema.flights).where(eq(schema.flights.id, flightId));
     expect(flightRow?.reportNotifiedAt).toBe(NOW_MS);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("leaves a due flight unclaimed when its owner has no device, so tomorrow's scan can still send it", async () => {
+    // Production, 2026-08-31: eight flights carried a report_notified_at and the whole database
+    // held ONE push subscription. The stamp went on before the subscription lookup, so a crew
+    // member with no device had every alert recorded as delivered — and registering a phone
+    // afterwards could never recover one, because the stamp hides the flight from the query.
+    const userId = await makeUser("report-scan-no-device@example.com");
+    const flightId = await insertFlight({
+      userId,
+      reportUtc: new Date(NOW_MS + 60 * 60 * 1000).toISOString(),
+    });
+
+    const testEnv = await testVapidEnv();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runReportScan(testEnv, NOW_MS);
+
+    expect(result.skippedNoSubscription).toBe(1);
+    expect(result.notified).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const [flightRow] = await db().select().from(schema.flights).where(eq(schema.flights.id, flightId));
+    expect(flightRow?.reportNotifiedAt).toBeNull();
+
+    // The flight is still a candidate, so a device registered later still gets the alert.
+    await addSubscription(userId, "https://push.example.com/registered-later");
+    fetchMock.mockResolvedValue(new Response(null, { status: 201 }));
+    const second = await runReportScan(testEnv, NOW_MS + 1000);
+    expect(second.notified).toBe(1);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("carries the push service's own error text out of a failed send", async () => {
+    // /api/push/test answered `failedWithStatus: [400]` from Apple on 2026-08-31 and there was
+    // nothing to do with it — 400 covers a malformed JWT, a bad `k=`, and a body the service
+    // will not accept. The status was all the code kept; the reason was thrown away.
+    const userId = await makeUser("report-scan-detail@example.com");
+    await addSubscription(userId, "https://web.push.example.com/rejects-us");
+    await insertFlight({
+      userId,
+      reportUtc: new Date(NOW_MS + 60 * 60 * 1000).toISOString(),
+    });
+
+    const testEnv = await testVapidEnv();
+    const warnings: string[] = [];
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args) => {
+      warnings.push(args.join(" "));
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("BadJwtToken", { status: 400 })),
+    );
+
+    await runReportScan(testEnv, NOW_MS);
+
+    const line = warnings.find((w) => w.startsWith("[push] send failed"));
+    expect(line).toContain("status=400");
+    expect(line).toContain("BadJwtToken");
+    // Host only. The endpoint's path segment is the subscription's bearer credential and must
+    // never reach a log anyone with log access can read.
+    expect(line).toContain("host=web.push.example.com");
+    expect(line).not.toContain("rejects-us");
+
+    // Let it through once. This file shares one database, and the release above leaves the
+    // flight a live candidate — every later test's fetch-call count would pick it up.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 201 })));
+    await runReportScan(testEnv, NOW_MS + 1000);
+
+    warnSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("puts the claim back when every send fails for a reason that is not an expiry", async () => {
+    // 404/410 means the subscription is dead and gets deleted. A 500 means the push service had
+    // a bad minute — and that used to burn the flight exactly as hard as a successful send.
+    const userId = await makeUser("report-scan-send-fails@example.com");
+    await addSubscription(userId, "https://push.example.com/server-error");
+    const flightId = await insertFlight({
+      userId,
+      reportUtc: new Date(NOW_MS + 60 * 60 * 1000).toISOString(),
+    });
+
+    const testEnv = await testVapidEnv();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runReportScan(testEnv, NOW_MS);
+
+    expect(result.notified).toBe(0);
+    expect(result.releasedAfterSendFailure).toBe(1);
+    expect(result.expiredSubscriptionsRemoved).toBe(0);
+
+    const [flightRow] = await db().select().from(schema.flights).where(eq(schema.flights.id, flightId));
+    expect(flightRow?.reportNotifiedAt).toBeNull();
+
+    // Next cron, push service healthy again: the alert actually goes out.
+    fetchMock.mockResolvedValue(new Response(null, { status: 201 }));
+    const retry = await runReportScan(testEnv, NOW_MS + 1000);
+    expect(retry.notified).toBe(1);
 
     vi.unstubAllGlobals();
   });

@@ -50,7 +50,6 @@ export default function TripLegsPanel({ trip }: { trip: TripWithFlights }) {
             <p className="num text-sm text-ink-muted">
               dep {formatLocal(flight.depUtc, flight.depTz)} → arr {formatLocal(flight.arrUtc, flight.arrTz)}
             </p>
-            <p className="num text-sm text-report">Report {formatLocal(flight.reportUtc, flight.depTz)}</p>
           </div>
         ))}
 

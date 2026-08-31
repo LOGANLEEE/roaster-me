@@ -81,7 +81,7 @@ pushRouter.get("/push/test", async (c) => {
 
   let sent = 0;
   let expired = 0;
-  const failures: number[] = [];
+  const failures: { status: number; detail: string }[] = [];
   for (const sub of subs) {
     const result = await sendPush({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, payload, c.env);
     if (result.ok) sent++;
@@ -89,11 +89,15 @@ pushRouter.get("/push/test", async (c) => {
       await database.delete(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.id, sub.id));
       expired++;
     } else {
-      failures.push(result.status);
+      // The status alone does not name a cause. This route reported `failedWithStatus: [400]`
+      // on 2026-08-31 and there was nothing to do with it: Apple returns 400 for a malformed
+      // JWT, a bad `k=`, and a body it will not accept. The service's own text says which, and
+      // this is the one surface a phone can reach without tooling.
+      failures.push({ status: result.status, detail: result.detail });
     }
   }
 
-  return c.json({ sent, subscriptions: subs.length, expiredRemoved: expired, failedWithStatus: failures });
+  return c.json({ sent, subscriptions: subs.length, expiredRemoved: expired, failed: failures });
 });
 
 pushRouter.post("/push/subscribe", async (c) => {

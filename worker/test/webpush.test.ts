@@ -184,21 +184,34 @@ describe("sendPush", () => {
   it("returns expired:true on a 410 Gone response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 410 })));
     const result = await sendPush(fakeSubscription(), { title: "x" }, env);
-    expect(result).toEqual({ ok: false, status: 410, expired: true });
+    expect(result).toEqual({ ok: false, status: 410, expired: true, detail: "" });
+    vi.unstubAllGlobals();
+  });
+
+  it("carries the push service's error text back to the caller", async () => {
+    // A status code does not name a cause: Apple answers 400 for a malformed VAPID JWT, a bad
+    // `k=`, and a body it will not accept. Production returned exactly that on 2026-08-31 with
+    // the reason discarded, so there was nothing to act on.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("BadJwtToken", { status: 400 })),
+    );
+    const result = await sendPush(fakeSubscription(), { title: "x" }, env);
+    expect(result).toEqual({ ok: false, status: 400, expired: false, detail: "BadJwtToken" });
     vi.unstubAllGlobals();
   });
 
   it("returns expired:true on a 404 Not Found response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     const result = await sendPush(fakeSubscription(), { title: "x" }, env);
-    expect(result).toEqual({ ok: false, status: 404, expired: true });
+    expect(result).toEqual({ ok: false, status: 404, expired: true, detail: "" });
     vi.unstubAllGlobals();
   });
 
   it("returns expired:false on a 500 response (transient - do not delete the subscription)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
     const result = await sendPush(fakeSubscription(), { title: "x" }, env);
-    expect(result).toEqual({ ok: false, status: 500, expired: false });
+    expect(result).toEqual({ ok: false, status: 500, expired: false, detail: "" });
     vi.unstubAllGlobals();
   });
 

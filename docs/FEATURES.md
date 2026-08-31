@@ -22,7 +22,7 @@ codebase to find out. Status words mean exactly one thing:
 | Add a trip inline on an empty day | Live | Flight-code input appears immediately; airline prefix is a setting, digits only |
 | Turnarounds in one save | Live | Second flight appends to the same preview before saving |
 | Edit / delete on the card | Live | Pencil and bin. Editing is create-then-delete, never the reverse |
-| Trip detail with leg timeline | Live | Report → depart → land, with layovers between sectors — on the day card, which is the only trip surface now |
+| Trip detail with leg timeline | Live | Depart → land, with layovers between sectors — on the day card, which is the only trip surface now. No report row since 2026-08-31: the crew member reads report and e-gate in her airline's own app |
 | Manual entry when a lookup misses | Live | Only appears after a lookup actually returns empty |
 | More than one duty on a day | Live | A turnaround in the morning and a standby that evening are separate trips, not legs. The day card stacks one card per duty, each with its own edit and delete. `tripsForDay()` returns a list; it used to return the first match and stop, which made a second duty invisible |
 | Delete asks in a modal | Live | Native `<dialog>` + `showModal()`, so Esc, focus trap and inert background come from the platform. jsdom implements none of it, so the behaviour is only ever real in e2e |
@@ -37,14 +37,14 @@ codebase to find out. Status words mean exactly one thing:
 | Destination forecast on a layover | Live | Open-Meteo, free and key-less, keyed on the `lat`/`lng` seeded from OurAirports. Only ever a real forecast: the API reaches about 16 days and a roster runs further, so beyond that the card says so instead of drawing a seasonal average. Attribution on the card (CC BY 4.0) |
 | Send a test notification | Live | Settings → Notifications. `GET /api/push/test` existed from the start with nothing calling it; the counts it returns are what tell "never sent" apart from "sent, device swallowed it" |
 | Sunset and city pointers on a layover | Live | Sunset rides along with the forecast already fetched — on a layover the question is how much light is left. Two outbound links (Wikivoyage city guide, a what's-on search) instead of mirroring either dataset into this app. See `DECISIONS.md` 2026-08-21 |
-| Layover brief, copied for an assistant | Live | On any day inside a down-route rest: how long she is free (landing → next **report**, not next departure — a 25h layover with a 19:40 report is 22h 35m of usable time) plus a button that copies the roster context as a prompt. Optional hotel field, never stored. See `DECISIONS.md` 2026-08-21 |
+| Layover brief, copied for an assistant | Live | On any day inside a down-route rest: how long she is free (landing → next **report**, not next departure — a 25h layover with a 19:40 report is 22h 35m of usable time) plus a button that copies the roster context as a prompt. Optional hotel field, never stored. Stays up for every day of the duty the layover feeds, including the morning a red-eye lands at base. See `DECISIONS.md` 2026-08-21, amended 2026-08-31 |
 | Today told apart from the tapped day | Live | Today fills the number in `--color-today`; selection rings the cell. They used to be the same colour and shape, one pixel apart |
 
 ## Notifications
 
 | Feature | Status | Notes |
 |---|---|---|
-| Report-time alert | Built | Fires at the user's lead (default 120 min) before report |
+| Report-time alert | Built | Fires at the user's lead (default 120 min) before report. Report time is no longer shown on the card, but still drives this. A flight is left unclaimed when the user has no device, and the claim is put back if every send fails, so neither case burns the alert |
 | Arrival alerts, 60 / 30 / 0 min | Live | Verified in production on a real EK373 arrival, delivered to an iOS PWA |
 | Arrival alerts on/off in Settings | Built | `notification_prefs.arrival_enabled`, independent of report alerts |
 | Lead time 30–360 min | Built | Applies to report alerts only; arrival stages are fixed |

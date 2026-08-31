@@ -26,6 +26,10 @@ export type LayoverRest = {
   nextReportUtc: string;
   nextDepUtc: string;
   nextDepTz: string;
+  /** When the flight OUT of the layover lands. Not part of the rest itself — it only sets how
+   * far `restForDay` reaches, so the panel stays on screen for the whole duty the layover
+   * belongs to, including a red-eye's landing day. */
+  nextArrUtc: string;
   /** Hours from landing to the next departure. What a roster calls the layover. */
   hours: number;
   /**
@@ -89,6 +93,7 @@ export function layoverRests(trips: readonly TripLike[], base: string): LayoverR
       nextReportUtc: outbound.reportUtc,
       nextDepUtc: outbound.depUtc,
       nextDepTz: outbound.depTz,
+      nextArrUtc: outbound.arrUtc,
       hours: (departsMs - arrivedMs) / 3_600_000,
       freeHours,
       clockShift: clockShiftHours(inbound.depUtc, inbound.depTz, inbound.arrUtc, inbound.arrTz),
@@ -102,6 +107,12 @@ export function layoverRests(trips: readonly TripLike[], base: string): LayoverR
  *
  * Days are keyed in `homeTz`, not the station's zone, because that is what the calendar grid
  * itself is keyed in — the cell she tapped has to be the rest she gets back.
+ *
+ * The window runs from the landing that starts the rest to the LANDING of the flight out of
+ * it, not to that flight's departure. EK192 leaves Lisbon at 14:20 on the 1st and lands Dubai
+ * at 01:30 on the 2nd; both days show the same trip card, so ending the window at the
+ * departure made one of those two cards carry the Lisbon panel and the other not, for no
+ * reason a reader could see. The panel now lives on every day of the duty the layover feeds.
  */
 export function restForDay(
   rests: readonly LayoverRest[],
@@ -112,7 +123,7 @@ export function restForDay(
     rests.find(
       (rest) =>
         localDateKey(rest.arrUtc, homeTz) <= isoDate &&
-        isoDate <= localDateKey(rest.nextDepUtc, homeTz),
+        isoDate <= localDateKey(rest.nextArrUtc, homeTz),
     ) ?? null
   );
 }

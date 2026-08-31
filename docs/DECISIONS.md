@@ -8,6 +8,128 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31 (card cleanup)
+
+### Report time is off the card entirely, and "Leave home" with it
+
+The board read `REPORT / DEP / ARR`, and the timeline four lines below it read
+`Leave home / Report / Departs / Lands`. On a single-sector duty three of the board's rows were
+the same three times, in the same zone, twice on one card. Asked what the REPORT column was for,
+there was no answer that survived pointing at the timeline underneath it.
+
+It came off the board first, and then off the card altogether, on the user's call. **His reason
+is the only piece of real user evidence this repo has ever had on the question: a crew member
+carries her airline's own app, which gives her report time and e-gate.** This card was restating
+a number she reads somewhere more authoritative.
+
+That reverses "the report time is the single value this app exists to show", which appears above
+in this file and was quoted back at him as if it settled the matter. It did not: it is a note an
+earlier session wrote, never checked against a user. **Citing this file as evidence for what a
+user needs is circular. It records what was decided, not what was true.**
+
+What remains: `flights.report_utc` is stored, drives the push alert, and sets the layover panel's
+"free until report" — which stays, because it answers a different question (how much of the rest
+is hers). `TripLegsPanel` lost its per-leg `Report` line too; leaving one behind a pencil would
+have been the inconsistency that generates the next question.
+
+The origin's station line moved from the deleted report row onto the first `Departs` row, so the
+card still names the city she leaves from rather than only its IATA code in the headline.
+
+**`Leave home` was deleted.** It was `report − 55 minutes`, flat. No home address, no distance, no
+traffic, no setting — a subtraction she can do in her head faster than she can open the app.
+
+**The consequence to watch: the crew/family view lost it too.** `e2e/crew.spec.ts` used to assert
+that the person reading a SHARED roster can see the report time, with the comment "the whole
+point of sharing: the person who is NOT crew can see the clock". That person does not have the
+airline app the removal is justified by. The assertion now checks DEP and ARR instead. If report
+should survive on the shared card, it needs a read-only branch, and that assertion goes back.
+
+`.sky .text-report` and `--color-report` stay in `tokens.css`, unused. This is a fresh product
+call that may be reversed, and restoring the token would mean re-running the contrast check.
+
+### The layover panel reaches the day the flight home lands
+
+`restForDay` matched `landing day ≤ day ≤ next DEPARTURE day`. EK192 leaves Lisbon at 14:20 on the
+1st and touches Dubai at 01:30 on the 2nd, and **both days render the same trip card** — so one of
+the two carried the Lisbon panel and the other did not, with nothing on screen to explain the
+difference. The window now ends at the outbound's LANDING (`nextArrUtc`), so the panel lives on
+every day of the duty the layover feeds.
+
+### Only one device in production had ever been subscribed to push
+
+Reported as "I never got the notification for today's flight". Measured against production D1 on
+2026-08-31:
+
+    SELECT COUNT(*) FROM push_subscriptions;   ->  1
+
+One row, an Apple endpoint, registered 2026-08-10, belonging to the account that raised the
+report. **The crew member's own account had zero.** Meanwhile eight of her flights carried a
+`report_notified_at`, stamped 110-119 minutes before report — the 120-minute default lead inside a
+15-minute cron, so the scan's timing was never the problem.
+
+Three defects, none of which could be seen from the database alone:
+
+1. **The claim was a receipt.** `claimFlightForNotification` stamped `report_notified_at` and only
+   then looked up subscriptions and sent. A user with no device got every alert recorded as
+   delivered, and because the candidate query filters on that column, registering a phone
+   afterwards could never recover one. The subscription lookup now happens BEFORE the claim, and
+   a candidate with no device is left unclaimed (`skippedNoSubscription`).
+2. **A failed send burned the flight.** 404/410 deletes the dead subscription, but a 500 or a
+   network error left the stamp in place with nothing sent and no retry, ever. The claim is now
+   put back (`releasedAfterSendFailure`), and `runArrivalScan` restores both `arrival_alert_stage`
+   and `arrival_notified_at` rather than leaving a timestamp for a notification nobody got.
+3. **Failure left no trace at all.** `sendPush` returned `{ ok: false, status }` and every caller
+   discarded it — nothing in D1, nothing in the logs, so "the push service rejected it" and "the
+   alert never arrived" were indistinguishable. One `console.warn` in `sendPush` now records
+   status and endpoint HOST. Host only: the endpoint's path segment is the subscription's bearer
+   credential.
+
+**A stamp in `report_notified_at` still is not proof of delivery** — it proves a send returned 2xx,
+which is the push service accepting the message, not a phone showing it. The only end-to-end check
+is `/api/push/test` from the device.
+
+That check was then run, from the phone that owns the one subscription:
+
+    {"sent":0,"subscriptions":1,"expiredRemoved":0,"failedWithStatus":[400]}
+
+**So there is a fourth cause, and it is upstream of all three above: Apple is rejecting the send
+outright.** Not 404/410 — the subscription is alive; the request is being refused. Combined with
+the subscription count, the honest reading is that **no push from this app has been delivered to
+anyone**, and every `report_notified_at` in the table records a send that a push service accepted
+or refused, never a notification a person saw.
+
+`400` does not name a cause. Apple returns it for a malformed VAPID JWT, a `k=` it will not
+accept, and a body it will not accept. **The response body says which, and `sendPush` was
+throwing it away** — so the next step is not a guess at the JWT, it is reading what Apple
+actually said. `SendPushResult` gains `detail`, `/api/push/test` returns `failed: [{status,
+detail}]`, and the `console.warn` carries it.
+
+What is NOT established: whether this ever worked. The subscription was registered 2026-08-10,
+nothing logged failures before today, and the 400 is a measurement from 2026-08-31 only.
+
+Do not "fix" the JWT from a symptom. Read the body first.
+
+Not fixed here, because it is not a code problem: the crew member's phone has never granted
+notification permission. Nothing in the Worker can create a subscription she did not accept.
+
+### The timeline stagger could only ever play once
+
+A CSS entry animation fires once per element. A pairing renders the same trip — same `trip.id`,
+so the same `DayDetailCard`, so the same rows — on every day it spans, so tapping 1 Sept and then
+2 Sept animated nothing at all: React kept the DOM nodes and only the panel below them changed.
+`TripSummaryLines` takes a `timelineKey`, and the day card passes `isoDate`, which remounts the
+rows per day. No animation library: the fix is one prop, and `motion` would have been ~30kB to
+replace a class that already works.
+
+**Testing this needed care, and the first version of the test was wrong.** Counting
+`animationstart` events straight after switching days passed with the fix reverted — rows enter at
+`70ms * index`, so a listener installed while the FIRST day's timeline was still settling caught
+its trailing rows and counted them as the second day's. `e2e/duty-card-report.spec.ts` now waits
+for every `.tl-enter` animation to reach `playState === "finished"` before it starts counting.
+With that wait in place, reverting the fix gives 0 starts.
+
+---
+
 ## 2026-08-31 (later)
 
 ### The morning she lands is a day on the calendar, and it is called an arrival
@@ -1022,6 +1144,8 @@ appeared on collapse went with it (unwanted), and the month header no longer dis
 - **Report time was removed from the card, then deliberately restored.** It was first cut as a
   run-on sentence (`Report 08:10 · leave home 07:15 · now`); the board gives it a labelled row that
   reads at a glance. Don't remove it again without checking this line.
+  *Superseded 2026-08-31:* report time is off the card entirely, on the user's instruction — the
+  crew member reads it in her airline's own app. See "Report time is off the card entirely".
 - Trip length shows only on multi-day pairings; "1 day" on a turnaround is noise.
 - **Weather and sunset were prototyped and deliberately not built.** They need airport lat/lng
   (a seed column) plus a weather API. Two fabricated tiles are worse than none.

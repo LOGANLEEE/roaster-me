@@ -184,8 +184,16 @@ describe("restForDay", () => {
     expect(restForDay(rests, "2026-08-22", HOME_TZ)?.station).toBe("SYD");
   });
 
+  it("reaches the day the flight OUT of the layover lands, not just the day it leaves", () => {
+    // EK413 leaves Sydney on the 22nd and touches DXB at 06:00 on the 23rd. Both days render
+    // the same trip card, so ending the window at the departure put the Sydney panel on one of
+    // the two and not the other, with nothing on screen explaining the difference.
+    expect(restForDay(rests, "2026-08-23", HOME_TZ)?.station).toBe("SYD");
+  });
+
   it("returns null outside the rest", () => {
     expect(restForDay(rests, "2026-08-19", HOME_TZ)).toBeNull();
+    expect(restForDay(rests, "2026-08-24", HOME_TZ)).toBeNull();
     expect(restForDay(rests, "2026-08-25", HOME_TZ)).toBeNull();
   });
 });

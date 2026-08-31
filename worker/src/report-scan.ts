@@ -38,6 +38,41 @@ async function claimFlightForNotification(
 }
 
 /**
+ * Puts a claimed flight back when nothing was actually delivered.
+ *
+ * The claim is a concurrency guard, not a receipt. Every send failing (a push service 500, a
+ * network error — anything that is not a 404/410 expiry) used to leave the stamp behind, and the
+ * candidate query filters on it, so the flight was burned: no retry on the next cron, ever.
+ * Measured on production 2026-08-31 — eight flights carried a `report_notified_at` and the
+ * database held one push subscription in total, so most of those stamps recorded a delivery to
+ * nobody.
+ */
+async function releaseFlightClaim(
+  database: ReturnType<typeof db>,
+  flightId: string,
+): Promise<void> {
+  await database
+    .update(schema.flights)
+    .set({ reportNotifiedAt: null })
+    .where(eq(schema.flights.id, flightId))
+    .run();
+}
+
+/** The arrival counterpart of `releaseFlightClaim` — puts both columns back as they were. */
+async function releaseArrivalStage(
+  database: ReturnType<typeof db>,
+  flightId: string,
+  previousStage: number | null,
+  previousNotifiedAt: number | null,
+): Promise<void> {
+  await database
+    .update(schema.flights)
+    .set({ arrivalAlertStage: previousStage, arrivalNotifiedAt: previousNotifiedAt })
+    .where(eq(schema.flights.id, flightId))
+    .run();
+}
+
+/**
  * Minutes before arrival at which to ping, largest first. 0 is "it is landing now".
  *
  * Three fixed stages rather than a user-configured list: the useful moments for meeting someone
@@ -108,6 +143,7 @@ export async function runArrivalScan(env: Env, nowMs: number): Promise<ReportSca
       dest: schema.flights.dest,
       arrUtc: schema.flights.arrUtc,
       arrivalAlertStage: schema.flights.arrivalAlertStage,
+      arrivalNotifiedAt: schema.flights.arrivalNotifiedAt,
     })
     .from(schema.flights)
     .where(
@@ -128,6 +164,8 @@ export async function runArrivalScan(env: Env, nowMs: number): Promise<ReportSca
     notified: 0,
     skippedOutsideLead: 0,
     expiredSubscriptionsRemoved: 0,
+    skippedNoSubscription: 0,
+    releasedAfterSendFailure: 0,
   };
   if (candidates.length === 0) return result;
 
@@ -168,6 +206,15 @@ export async function runArrivalScan(env: Env, nowMs: number): Promise<ReportSca
       continue;
     }
 
+    const subs = await database
+      .select()
+      .from(schema.pushSubscriptions)
+      .where(eq(schema.pushSubscriptions.userId, flight.userId));
+    if (subs.length === 0) {
+      result.skippedNoSubscription++;
+      continue;
+    }
+
     const claimed = await claimArrivalStage(database, flight.id, stage, flight.arrivalAlertStage, nowMs);
     if (!claimed) continue;
 
@@ -186,11 +233,6 @@ export async function runArrivalScan(env: Env, nowMs: number): Promise<ReportSca
       tag: `arrival-${flight.id}-${stage}`,
     };
 
-    const subs = await database
-      .select()
-      .from(schema.pushSubscriptions)
-      .where(eq(schema.pushSubscriptions.userId, flight.userId));
-
     let sentAny = false;
     for (const sub of subs) {
       const sendResult = await sendPush(
@@ -204,7 +246,15 @@ export async function runArrivalScan(env: Env, nowMs: number): Promise<ReportSca
         result.expiredSubscriptionsRemoved++;
       }
     }
-    if (sentAny) result.notified++;
+    if (sentAny) {
+      result.notified++;
+    } else {
+      // Back to the stage this flight was on before the claim, so the next cron re-offers it.
+      // `arrivalNotifiedAt` goes back with it rather than being left as a timestamp for a
+      // notification nobody got.
+      await releaseArrivalStage(database, flight.id, flight.arrivalAlertStage, flight.arrivalNotifiedAt);
+      result.releasedAfterSendFailure++;
+    }
   }
 
   return result;
@@ -215,6 +265,12 @@ export type ReportScanResult = {
   notified: number;
   skippedOutsideLead: number;
   expiredSubscriptionsRemoved: number;
+  /** Candidates whose owner has no device registered. Left unclaimed, so subscribing later
+   * still catches an alert that has not yet passed. */
+  skippedNoSubscription: number;
+  /** Claimed, then every send failed for a reason that was not an expiry, so the claim was
+   * put back and the next cron will try again. */
+  releasedAfterSendFailure: number;
 };
 
 /**
@@ -259,6 +315,8 @@ export async function runReportScan(env: Env, nowMs: number): Promise<ReportScan
     notified: 0,
     skippedOutsideLead: 0,
     expiredSubscriptionsRemoved: 0,
+    skippedNoSubscription: 0,
+    releasedAfterSendFailure: 0,
   };
 
   if (candidates.length === 0) return result;
@@ -288,6 +346,18 @@ export async function runReportScan(env: Env, nowMs: number): Promise<ReportScan
       continue;
     }
 
+    // Subscriptions BEFORE the claim. A user with no device cannot be notified, and claiming
+    // first stamped the flight as done and made it invisible to every later scan — so signing
+    // in on a phone tomorrow could never recover today's alert.
+    const subs = await database
+      .select()
+      .from(schema.pushSubscriptions)
+      .where(eq(schema.pushSubscriptions.userId, flight.userId));
+    if (subs.length === 0) {
+      result.skippedNoSubscription++;
+      continue;
+    }
+
     const claimed = await claimFlightForNotification(database, flight.id, nowMs);
     if (!claimed) continue; // already claimed by another (overlapping) scan run
 
@@ -304,11 +374,6 @@ export async function runReportScan(env: Env, nowMs: number): Promise<ReportScan
       tag: flight.id,
     };
 
-    const subs = await database
-      .select()
-      .from(schema.pushSubscriptions)
-      .where(eq(schema.pushSubscriptions.userId, flight.userId));
-
     let sentAny = false;
     for (const sub of subs) {
       const sendResult = await sendPush(
@@ -323,7 +388,12 @@ export async function runReportScan(env: Env, nowMs: number): Promise<ReportScan
         result.expiredSubscriptionsRemoved++;
       }
     }
-    if (sentAny) result.notified++;
+    if (sentAny) {
+      result.notified++;
+    } else {
+      await releaseFlightClaim(database, flight.id);
+      result.releasedAfterSendFailure++;
+    }
   }
 
   return result;

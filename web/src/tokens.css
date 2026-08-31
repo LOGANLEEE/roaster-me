@@ -324,6 +324,9 @@ body {
  * lib/contrast.test.ts for the measurements that set them. */
 .sky .text-ink { color: var(--color-ink-on-sky); }
 .sky .text-ink-muted { color: var(--color-ink-muted-on-sky); }
+/* Unused since 2026-08-31 — report time came off the card, so nothing emits `.text-report`
+   any more. Kept, with `--color-report`, because that removal is a product call that may be
+   reversed; the rule costs one line and putting the token back would cost a contrast re-check. */
 .sky .text-report { color: var(--color-report-on-sky); }
 .sky .border-edge { border-color: rgba(255, 255, 255, 0.14); }
 .sky .divide-edge > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255, 255, 255, 0.14); }
