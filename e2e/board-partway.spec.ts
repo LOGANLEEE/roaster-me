@@ -18,7 +18,7 @@ import { clearRoster, expectRosterCount, openAddForm, pickCalendarDay } from "./
 const FLIGHT = "EK9996";
 const BOARD_DAY = "2027-02-10"; // the GRU departure — the date her roster would carry
 const PRIOR_DAY = "2027-02-09"; // the EZE sector the aircraft flew to reach her
-const LANDING_DAY = "2027-02-11"; // Dubai, 00:30 local — a morning at home
+const LANDING_DAY = "2027-02-11"; // Dubai, 00:30 local — the morning she walks in
 
 test("boarding partway: the picked date is the sector she flies, not the one the aircraft started on", async ({
   page,
@@ -45,13 +45,14 @@ test("boarding partway: the picked date is the sector she flies, not the one the
   await expectRosterCount(page, 1);
 
   // --- The calendar ---
-  // The duty is the 10th, in home-base local time. The 9th belongs to the aircraft, not to her,
-  // and the 11th is the morning she lands at 00:30 and is home for the rest of.
+  // The duty is the 10th, in home-base local time; the 11th is the morning she lands at 00:30.
+  // The 9th belongs to the aircraft, not to her, and stays clean.
   await expect(page.getByTestId(`calendar-day-${BOARD_DAY}`)).toHaveClass(/bg-accent-soft/);
   await expect(page.getByTestId(`day-mark-${BOARD_DAY}`)).toContainText("↙");
   await expect(page.getByTestId(`day-mark-${BOARD_DAY}`)).toContainText("GRU");
+  await expect(page.getByTestId(`calendar-day-${LANDING_DAY}`)).toHaveClass(/bg-accent-soft/);
+  await expect(page.getByTestId(`day-mark-${LANDING_DAY}`)).toContainText("DXB");
   await expect(page.getByTestId(`calendar-day-${PRIOR_DAY}`)).not.toHaveClass(/bg-accent-soft/);
-  await expect(page.getByTestId(`calendar-day-${LANDING_DAY}`)).not.toHaveClass(/bg-accent-soft/);
 
   // --- The card ---
   await pickCalendarDay(page, BOARD_DAY);

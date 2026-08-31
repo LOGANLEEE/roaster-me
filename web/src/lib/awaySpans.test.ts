@@ -30,10 +30,9 @@ describe("awaySpans", () => {
   it("joins two trips into one stretch away from base", () => {
     const spans = awaySpans([OUT, BACK], BASE);
 
-    // One span, not two: she leaves base once and returns once. It ends where she boards the
-    // flight home, which is why the value below is a departure and not the 21:40 landing.
+    // One span, not two: she leaves base once and returns once, and it runs to the landing.
     expect(spans).toEqual([
-      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-27T03:00:00.000Z" },
+      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-27T21:40:00.000Z" },
     ]);
   });
 
@@ -57,7 +56,7 @@ describe("awaySpans", () => {
       ],
     };
     expect(awaySpans([turn], BASE)).toEqual([
-      { firstDepUtc: "2026-08-05T04:00:00.000Z", endUtc: "2026-08-05T07:30:00.000Z" },
+      { firstDepUtc: "2026-08-05T04:00:00.000Z", endUtc: "2026-08-05T10:00:00.000Z" },
     ]);
   });
 
@@ -71,7 +70,7 @@ describe("awaySpans", () => {
 
     expect(spans).toEqual([
       { firstDepUtc: "2026-08-19T05:00:00.000Z", endUtc: "2026-08-19T07:45:00.000Z" },
-      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-27T03:00:00.000Z" },
+      { firstDepUtc: "2026-08-22T02:30:00.000Z", endUtc: "2026-08-27T21:40:00.000Z" },
     ]);
   });
 
@@ -104,25 +103,28 @@ const RED_EYE_HOME = {
 };
 
 describe("a red-eye that lands at base after local midnight", () => {
-  it("leaves the morning it lands unmarked, and still calls the 27th the day she comes home", () => {
-    // Running the span to the landing marked the 28th away, and the duty-day fallback then
-    // labelled it "layover · DXB" — an outstation day at her own base, on a morning she spent
-    // asleep at home. That is what put "back on Thursday" a day out for the person waiting.
+  it("marks both the day she flies home and the morning she lands, and calls them different things", () => {
+    // The duty is flown on the 27th; the wheels touch at 00:09 on the 28th. Both days belong to
+    // her trip and they are not the same fact. The 28th used to read "layover · DXB" — an
+    // outstation day at her own base — and the fix for that briefly dropped the day entirely,
+    // which left the calendar silent about the morning she actually walks in.
     const days = tripDaysInMonth(awaySpans([OUT, RED_EYE_HOME], BASE), 2026, 8, "Asia/Dubai");
+    const marks = dutyDayMarks([OUT, RED_EYE_HOME], "Asia/Dubai", BASE, days.keys());
 
     expect(days.has("2026-08-27")).toBe(true);
-    expect(days.has("2026-08-28")).toBe(false);
-    expect(
-      dutyDayMarks([OUT, RED_EYE_HOME], "Asia/Dubai", BASE, days.keys()).get("2026-08-27"),
-    ).toEqual({ kind: "return", code: "EZE" });
+    expect(days.has("2026-08-28")).toBe(true);
+    expect(marks.get("2026-08-27")).toEqual({ kind: "return", code: "EZE" });
+    expect(marks.get("2026-08-28")).toEqual({ kind: "arrives", code: "DXB" });
+    // And no further: the 29th is hers.
+    expect(days.has("2026-08-29")).toBe(false);
   });
 });
 
 describe("calendarSpan", () => {
-  it("ends where she boards the leg that lands at base", () => {
+  it("runs to the landing, including the leg that lands at base", () => {
     expect(calendarSpan(RED_EYE_HOME.flights, BASE)).toEqual({
       firstDepUtc: "2026-08-27T01:25:00.000Z",
-      endUtc: "2026-08-27T06:05:00.000Z",
+      endUtc: "2026-08-27T20:09:36.000Z",
     });
   });
 

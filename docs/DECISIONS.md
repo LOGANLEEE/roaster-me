@@ -8,6 +8,45 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31 (later)
+
+### The morning she lands is a day on the calendar, and it is called an arrival
+
+Yesterday's fix ended a base-bound span at the BOARDING, to keep the landing morning off the
+away band. That corrected the wrong thing. The complaint was never that the day was marked — it
+was that `dutyDayMarks` labelled it `layover · DXB`, an outstation day at her own base. Dropping
+the day meant the calendar said nothing at all about the morning she walks in, which is the one
+thing the person waiting is looking for. Measured on the real corrected EK248: marked days ran
+`22 23 24 25 26` and the 27th, when she actually got home at 00:30, was not on the grid.
+
+So: the span runs to the landing again, and the label is fixed at source. `DayKind` gains
+`arrives` — the day she lands at base without having departed on it. `return` still means the day
+the duty is FLOWN. A red-eye home owns both, and they are different facts: `26 ↙GIG` (flying
+home) then `27 ↙DXB` (lands 00:30).
+
+**Rejected — leave it to the card.** `ARR Thu 27 · 00:30` is already on the trip card, and that is
+where an exact time belongs. But the calendar is the surface someone opens to ask "when is she
+back", and a month grid that has no cell for the answer sends them to tap through days.
+
+### The calendar keyed itself to an outstation when no leg departed base
+
+`homeTz` took the earliest leg departing `HOME_BASE_IATA`, falling back to
+`trips[0].flights[0].depTz`. A roster can genuinely contain no departure from base: she joined a
+routing down-route and her only sector is the one home. The fallback then keyed the whole grid to
+whatever the API listed first — for a GRU→DXB sector, São Paulo. Measured, same span, two zones:
+
+    Asia/Dubai        -> 2027-02-10  2027-02-11
+    America/Sao_Paulo -> 2027-02-10
+
+Every day boundary on the grid was an outstation's, and the morning she got home was not a day at
+all. A leg that LANDS at base now comes second in the chain: its `arrTz` is the same airport's
+zone read from the other end, already in the data, no lookup needed.
+
+This surfaced as `board-partway.spec.ts` failing against correct code and correct data — worth
+recording, because the natural reading of that failure was "the arrival change is broken".
+
+---
+
 ## 2026-08-31
 
 ### The grid marks the neighbours' days it happens to draw

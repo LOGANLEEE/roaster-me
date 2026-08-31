@@ -856,12 +856,22 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
    * leaving Buenos Aires (UTC-3), EK805's 06:55 Dubai departure keys to the day BEFORE on the
    * grid. The 19th then held no departure and fell through to the layover glyph, so the grid
    * said "· JED" on a day whose own card said "DXB → JED, departs 06:55".
+   *
+   * A leg that LANDS at base is the second source, and it is not a lesser one: its `arrTz` is
+   * the same airport's zone read from the other end. It matters because a roster can genuinely
+   * contain no departure from base — she joined a routing down-route, and her only sector is the
+   * one home. The old fallback then took whatever leg the API happened to list first and keyed
+   * the whole grid to an outstation: a flight landing 00:30 Dubai read as 17:30 the previous day
+   * in São Paulo, so the morning she got home was not a day on the calendar at all.
    */
+  const allLegs = (trips ?? []).flatMap((trip) => trip.flights);
   const homeTz =
-    (trips ?? [])
-      .flatMap((trip) => trip.flights)
+    allLegs
       .filter((leg) => leg.origin === HOME_BASE_IATA)
       .sort((a, b) => Date.parse(a.depUtc) - Date.parse(b.depUtc))[0]?.depTz ??
+    allLegs
+      .filter((leg) => leg.dest === HOME_BASE_IATA)
+      .sort((a, b) => Date.parse(a.arrUtc) - Date.parse(b.arrUtc))[0]?.arrTz ??
     trips?.[0]?.flights[0]?.depTz ??
     Intl.DateTimeFormat().resolvedOptions().timeZone;
 

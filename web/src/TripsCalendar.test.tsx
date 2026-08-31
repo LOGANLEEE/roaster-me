@@ -337,8 +337,12 @@ describe("TripsCalendar", () => {
     expect(screen.getByTestId("day-mark-2026-09-01")).toHaveTextContent("↙LIS");
     // And the run reads as one object across the edge rather than two boxes sharing a colour.
     expect(screen.getByTestId("calendar-day-2026-08-31").className).toContain("rounded-r-none");
+    expect(screen.getByTestId("calendar-day-2026-09-01").className).toContain("rounded-none");
+    // The landing is 01:30 Dubai on 2 Sep, so that morning is the last day of the run.
+    expect(screen.getByTestId("calendar-day-2026-09-02").className).toContain("bg-accent-soft");
+    expect(screen.getByTestId("day-mark-2026-09-02")).toHaveTextContent("↙DXB");
     // A day she is genuinely home for stays clean, next month or not.
-    expect(screen.getByTestId("calendar-day-2026-09-02").className).not.toContain("bg-accent-soft");
+    expect(screen.getByTestId("calendar-day-2026-09-03").className).not.toContain("bg-accent-soft");
   });
 
   it("navigates to the next and previous month via chevrons", async () => {
@@ -398,13 +402,14 @@ describe("TripsCalendar", () => {
 
     const day = (iso: string) => screen.getByTestId(`calendar-day-${iso}`);
 
-    // 24th opens the row; 25th and 26th sit inside it, so inner corners square off.
+    // 24th opens the row; 25th, 26th and 27th sit inside it, so inner corners square off.
     expect(day("2026-08-25").className).toContain("rounded-none");
     expect(day("2026-08-26").className).toContain("rounded-none");
+    expect(day("2026-08-27").className).toContain("rounded-none");
     // She boards the flight home at 03:00Z on the 27th and lands 01:40 on the 28th, Dubai time.
-    // The 27th is the last day away and closes the band; the 28th is a morning at home.
-    expect(day("2026-08-27").className).toContain("rounded-r-lg");
-    expect(day("2026-08-28").className).not.toContain("bg-accent-soft");
+    // The 28th is the day she gets home, and it closes the band.
+    expect(day("2026-08-28").className).toContain("rounded-r-lg");
+    expect(screen.getByTestId("day-mark-2026-08-28")).toHaveTextContent("↙DXB");
     // A day with nothing on it is a plain rounded box.
     expect(day("2026-08-30").className).toContain("rounded-lg");
     expect(day("2026-08-30").className).not.toContain("rounded-none");
@@ -412,7 +417,7 @@ describe("TripsCalendar", () => {
     // The 0.5rem grid gap is bridged, so the band has no seams between the days inside it.
     expect(day("2026-08-25").querySelector(".left-full")).not.toBeNull();
     // ...and is not bridged past the end of the run.
-    expect(day("2026-08-27").querySelector(".left-full")).toBeNull();
+    expect(day("2026-08-28").querySelector(".left-full")).toBeNull();
   });
 
   it("breaks the band at the week boundary rather than running off the row", () => {
