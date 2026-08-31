@@ -8,6 +8,62 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31 (the weather falls)
+
+### The sky texture moves now — and "no background animation" never meant "no motion"
+
+The falling-weather layer carried a comment saying it was "static on purpose: CLAUDE.md allows
+transform/opacity animation only, and a moving full-card background is a repaint every frame."
+Right about the mechanism, wrong about the options. **The ban is on animating the background.**
+This is one absolutely-positioned pseudo-element; translating it is a transform, the same thing
+the calendar's month track and the weather glyph already do. The field gradients underneath never
+move, so nothing repaints.
+
+Rain, storm and snow fall. Cloud and clear do not, because they have no texture layer to move and
+giving them one would mean animating a gradient — which is the thing the rule actually forbids.
+
+**Both loops are picked so the pattern maps exactly onto itself**, which is what makes an infinite
+translation seamless instead of a jump every cycle:
+
+- rain/storm travel **32.65px** straight down. The 74deg gradient repeats every 9px along its own
+  axis `(sin74, -cos74) = (0.9613, -0.2756)`; a vertical drop of `d` moves the pattern `0.2756*d`
+  along that axis, so `d = 9 / 0.2756 = 32.65px` is exactly one period. The stripes are slanted,
+  so falling vertically still reads as slanted rain.
+- snow travels **14px**, one full cell of the 14px dot grid.
+
+Storm is rain at 0.62s against rain's 1.15s — same texture, harder.
+
+**The bleed is vertical only, and that is not a style choice.** The first version bled `-48px` on
+every side so the layer never ran out of texture, and measured **+41px on
+`document.scrollWidth` at 390px** — a horizontal scroll, which this project treats as an
+invariant. The card is `overflow: hidden` and clips it visually; an absolutely positioned box that
+starts outside its clipping ancestor still counts toward the document's scrollable width.
+`will-change` was ruled out as the cause by removing it and re-measuring: still +41px.
+
+Measured after the fix, per kind, at 390px: four screenshots of the card 150ms apart hash to
+**4 distinct frames** under `no-preference` and **1** under `reduce`, with the card box unchanged
+at 358×148 and no horizontal overflow in either.
+
+### A panel with its own background was wearing the sky's text colours
+
+Found while screenshotting the above, in light theme, which is not the theme this app is usually
+read in.
+
+`.sky .text-ink` cascades to every descendant. The layover panel is `bg-card` — **white** in
+light theme — so its text was being painted in the near-white on-sky ink. The free-time figure
+(`23h 59m`, the largest thing in the panel) measured **1.19:1**, against 16.86:1 on the same card
+with no sky.
+
+Dark theme never showed it: there `--color-ink` and `--color-ink-on-sky` are the same colour, so
+it reads 13.65:1 either way. That is why it survived from the day skies shipped.
+
+Fixed by scoping the overrides out of any descendant that brought its own background:
+`.sky .bg-card .text-ink` and friends. Keyed on `.bg-card`, not on the panel's test id — the rule
+is "a surface with its own background gets its own text colours", and the next panel inside a sky
+will need it too.
+
+---
+
 ## 2026-08-31 (the board goes)
 
 ### The DEP/ARR board was deleted — with REPORT gone, it was the timeline twice

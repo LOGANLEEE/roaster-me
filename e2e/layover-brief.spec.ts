@@ -207,6 +207,38 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
   });
   expect(onSky.muted, "muted text must use --color-ink-muted-on-sky").toBe("rgb(154, 163, 181)");
 
+  // --- The whole field falls, not just the glyph. ---
+  // The texture layer was static from the day skies shipped, on the reasoning that a moving
+  // background repaints every frame. It is a transform on one composited pseudo-element, which
+  // is the same thing the glyph and the calendar's month track already do — the gradients under
+  // it never move. Read off ::before, because that is the layer that carries it.
+  const field = await card.evaluate((el) => {
+    const cs = getComputedStyle(el, "::before");
+    return { name: cs.animationName, duration: cs.animationDuration, iteration: cs.animationIterationCount };
+  });
+  expect(field.name, "a storm field has to fall").toBe("sky-fall-rain");
+  expect(field.iteration).toBe("infinite");
+
+  // --- A panel with its own background keeps its own text colours. ---
+  // The on-sky overrides are tuned for the dark field and cascade to every descendant, so the
+  // layover panel — `bg-card`, WHITE in light theme — was painting its text in near-white ink.
+  // Measured 2026-08-31: the free-time figure came out 1.19:1 there, against 16.86:1 on the
+  // same card with no sky. Dark theme never showed it, because there `--color-ink` and
+  // `--color-ink-on-sky` are the same colour, which is how it survived since skies shipped.
+  await page.emulateMedia({ colorScheme: "light" });
+  const inPanel = await page.getByTestId("layover-free").evaluate((el) => {
+    let bg = "rgba(0, 0, 0, 0)";
+    let node: HTMLElement | null = el;
+    while (node && (bg === "rgba(0, 0, 0, 0)" || bg === "transparent")) {
+      bg = getComputedStyle(node).backgroundColor;
+      node = node.parentElement;
+    }
+    return { fg: getComputedStyle(el).color, bg };
+  });
+  expect(inPanel.bg, "the panel is opaque white in light theme").toBe("rgb(255, 255, 255)");
+  expect(inPanel.fg, "so its text must be the ordinary ink, not the on-sky ink").toBe("rgb(27, 29, 34)");
+  await page.emulateMedia({ colorScheme: null });
+
   // --- The weather mark moves, so it can be spotted rather than read past. ---
   const glyph = card.locator("svg[data-wx]");
   await expect(glyph).toHaveAttribute("data-wx", "storm");

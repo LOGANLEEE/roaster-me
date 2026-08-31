@@ -295,8 +295,14 @@ body {
 }
 
 /* Falling weather, as raking hairlines rather than an icon — it reads as texture at a glance
- * and costs no layout. Static on purpose: CLAUDE.md allows transform/opacity animation only,
- * and a moving full-card background is a repaint every frame. */
+ * and costs no layout.
+ *
+ * It used to be static, with the note "a moving full-card background is a repaint every frame".
+ * That was right about the mechanism and wrong about the options: the ban is on animating the
+ * BACKGROUND. This is one composited pseudo-element, and translating it is a transform — the
+ * same thing the calendar's month track and the weather glyph already do. The field gradients
+ * underneath never move, so nothing repaints. The motion lives in the reduced-motion block
+ * further down; everything here is what both settings see. */
 .sky[data-sky="rain"]::before,
 .sky[data-sky="storm"]::before,
 .sky[data-sky="snow"]::before {
@@ -319,6 +325,59 @@ body {
   opacity: 0.14;
 }
 
+/* ...and now it falls.
+ *
+ * Straight down, and both loops are chosen so the pattern maps exactly onto itself — that is
+ * what makes an infinite translation seamless instead of a jump every cycle:
+ *
+ *   rain/storm — 32.65px. The 74deg gradient repeats every 9px along its own axis
+ *                (sin74, -cos74) = (0.9613, -0.2756); a vertical drop of d moves the pattern
+ *                0.2756*d along that axis, so d = 9 / 0.2756 = 32.65px is exactly one period.
+ *                The stripes are slanted, so falling vertically still reads as slanted rain.
+ *   snow       — 14px, one full cell of the 14px dot grid.
+ *
+ * Colours, opacities and the field gradients are untouched, so lib/contrast.test.ts still
+ * describes what is on screen. Nothing here can move a pixel of layout: the layer is absolute
+ * inside a card that is already `relative` and `overflow-hidden`.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* Extra texture ABOVE the card, so the layer never runs out of pattern as it falls. Only
+     above: a horizontal bleed measured +41px on `document.scrollWidth` at 390px even though the
+     card is `overflow: hidden`, which breaks the no-horizontal-scroll invariant. An absolutely
+     positioned box that starts outside its clipping ancestor still counts toward the document's
+     scrollable width; `will-change` was ruled out as the cause by removing it and re-measuring. */
+  .sky[data-sky="rain"]::before,
+  .sky[data-sky="storm"]::before {
+    top: -34px;
+    will-change: transform;
+  }
+  .sky[data-sky="snow"]::before {
+    top: -16px;
+    will-change: transform;
+  }
+  .sky[data-sky="rain"]::before {
+    animation: sky-fall-rain 1.15s linear infinite;
+  }
+  /* A storm is the same rain, harder. */
+  .sky[data-sky="storm"]::before {
+    animation: sky-fall-rain 0.62s linear infinite;
+  }
+  .sky[data-sky="snow"]::before {
+    animation: sky-fall-snow 3.4s linear infinite;
+  }
+}
+
+@keyframes sky-fall-rain {
+  to {
+    transform: translate3d(0, 32.65px, 0);
+  }
+}
+@keyframes sky-fall-snow {
+  to {
+    transform: translate3d(0, 14px, 0);
+  }
+}
+
 /* Text inside a sky. Scoped overrides beat threading an "on sky?" prop through every element
  * of the card, and they are the whole reason the tokens above exist — see
  * lib/contrast.test.ts for the measurements that set them. */
@@ -329,6 +388,21 @@ body {
    reversed; the rule costs one line and putting the token back would cost a contrast re-check. */
 .sky .text-report { color: var(--color-report-on-sky); }
 .sky .border-edge { border-color: rgba(255, 255, 255, 0.14); }
+
+/* ...but not inside a panel that brought its own opaque background.
+ *
+ * The overrides above are tuned for the dark sky field and cascade to every descendant. The
+ * layover panel is `bg-card` — white in light theme — so its text was being painted in the
+ * near-white on-sky ink. Measured 2026-08-31 on a rain card at 390px: the free-time figure
+ * (`23h 59m`) came out 1.19:1 against the panel, against 16.86:1 on the same card with no sky.
+ * Dark theme never showed it, because there `--color-ink` and `--color-ink-on-sky` are the same
+ * colour — 13.65:1 either way, which is why this survived since the sky shipped.
+ *
+ * Scoped to `.bg-card`, not to the panel's test id: the rule is "a surface with its own
+ * background gets its own text colours", and any future panel inside a sky needs it too. */
+.sky .bg-card .text-ink { color: var(--color-ink); }
+.sky .bg-card .text-ink-muted { color: var(--color-ink-muted); }
+.sky .bg-card .border-edge { border-color: var(--color-edge); }
 .sky .divide-edge > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255, 255, 255, 0.14); }
 
 /* Weather glyph motion (WeatherGlyph.tsx).
