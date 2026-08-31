@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Airport } from "@danyeowa/shared";
 import CalendarHome from "./CalendarHome";
@@ -290,7 +290,7 @@ describe("CalendarHome", () => {
     expect(screen.getByText("Mon")).toBeInTheDocument();
 
     // Next-duty card: FULL route chain (every stop, not just endpoints) + flight/trip-length
-    // muted line, then the departure-board rows (REPORT/DEP/ARR) and the duration.
+    // muted line, then the departure-board rows (DEP/ARR) and the duration.
     const card = screen.getByTestId("next-duty-card");
     expect(card).toHaveTextContent("DXB → SIN → AKL");
     expect(card).toHaveTextContent("EK448 · Tue 11 Aug · 2 days");
@@ -305,7 +305,17 @@ describe("CalendarHome", () => {
     // The preview carries the timeline too. It used to stop at the board rows, which is what
     // "day 22 renders without details" was: the home screen showed a route and three times,
     // and everything else was one tap away with nothing on screen saying so.
-    expect(card).toHaveTextContent(/leave home/i);
+    expect(card).toHaveTextContent(/departs/i);
+    expect(card).toHaveTextContent("11h 20m airborne");
+    // "Leave home" was report minus a flat 55 minutes — no home, no distance, no traffic in
+    // that number, and she already carries an app that gives her report and e-gate.
+    expect(card).not.toHaveTextContent(/leave home/i);
+    // Report is printed ONCE, by the timeline. The board above it is DEP/ARR only — it used to
+    // head that board AND be the timeline's second row, the same time twice on one card.
+    expect(card.textContent?.match(/report/gi) ?? []).toHaveLength(1);
+    expect(card.textContent?.match(/04:45/g) ?? []).toHaveLength(1);
+    // ...and it keeps the amber it had on the board: the loudest thing on the card.
+    expect(within(card).getByText("Report").className).toContain("text-report");
   });
 
   it("shows the calendar skeleton while trips are loading, then replaces it once they resolve", async () => {
@@ -785,8 +795,8 @@ describe("CalendarHome", () => {
       await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
 
       const timeline = await screen.findByTestId("duty-timeline");
-      expect(timeline).toHaveTextContent("Leave home");
-      expect(timeline).toHaveTextContent("03:50"); // report (04:45 Asia/Dubai) minus 55m
+      expect(timeline).not.toHaveTextContent("Leave home");
+      expect(timeline).not.toHaveTextContent("03:50"); // the old report-minus-55m row
       expect(timeline).toHaveTextContent("Report");
       expect(timeline).toHaveTextContent("04:45"); // firstLeg.reportUtc in Asia/Dubai
       expect(timeline).toHaveTextContent("Departs");
@@ -794,8 +804,35 @@ describe("CalendarHome", () => {
       expect(timeline).toHaveTextContent("11h 20m airborne"); // leg 0: 02:15Z -> 13:35Z
       expect(timeline).toHaveTextContent("Lands");
       expect(timeline).toHaveTextContent("21:35"); // leg 0 arrUtc in Asia/Singapore
-      // The summary board rows sit above the timeline, not swapped out for it.
-      expect(screen.getByTestId("day-detail-card")).toHaveTextContent(/report/i);
+      // The summary board rows sit above the timeline, not swapped out for it — but they are
+      // DEP/ARR only now, so the timeline is the only place report is printed.
+      const detail = screen.getByTestId("day-detail-card");
+      expect(detail).toHaveTextContent(/dep/i);
+      expect(detail).toHaveTextContent(/arr/i);
+      expect(detail.textContent?.match(/report/gi) ?? []).toHaveLength(1);
+      expect(within(timeline).getByText("Report").className).toContain("text-report");
+    });
+
+    it("remounts the timeline when another day of the SAME trip is picked, so the stagger replays", async () => {
+      vi.mocked(getTrips).mockResolvedValue([aklTrip]);
+      vi.mocked(getAirport).mockResolvedValue(null);
+      const user = userEvent.setup();
+
+      render(<CalendarHome now={now} />);
+
+      // A CSS entry animation fires once per ELEMENT. A pairing renders the same trip (same
+      // `trip.id`, so the same card) on every day it spans, so without a per-day key React
+      // kept the very same rows and tapping the second day animated nothing at all.
+      await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
+      const first = await screen.findByTestId("duty-timeline");
+
+      await user.click(await screen.findByTestId("calendar-day-2026-08-12"));
+      const second = await screen.findByTestId("duty-timeline");
+
+      expect(second).not.toBe(first);
+      // Same duty either way — this is a remount, not a different trip.
+      expect(second).toHaveTextContent("Report");
+      expect(second).toHaveTextContent("11h 20m airborne");
     });
 
     it("shows a layover row between legs for a multi-leg trip, with a Departs/Lands pair per leg", async () => {

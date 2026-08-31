@@ -8,6 +8,59 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31 (card cleanup)
+
+### Report is printed once, and "Leave home" is gone
+
+The board read `REPORT / DEP / ARR`, and the timeline four lines below it read
+`Leave home / Report / Departs / Lands`. On a single-sector duty three of the board's rows were
+the same three times, in the same zone, twice on one card. Asked what the REPORT column was for,
+there was no answer that survived pointing at the timeline underneath it.
+
+**The board is DEP and ARR. The timeline keeps report, amber, and now paints the time and the
+label rather than only the dot.** Report is the one value this app exists to show, so it does not
+lose its weight — it loses its double. The timeline is where it belongs, because it is the first
+thing that happens in the day rather than a figure in a table.
+
+**Rejected — drop the timeline on single-sector days instead.** It would have removed the station
+names, the body-clock shift and the airborne duration along with the duplication, and left the
+card changing shape depending on how many legs a duty has.
+
+The old line "Report time was removed from the card, then deliberately restored" still stands and
+is not what happened here. That removal turned it into a run-on sentence
+(`Report 08:10 · leave home 07:15 · now`) with no label. It is still labelled, still amber, still
+the loudest row — just not printed twice.
+
+**`Leave home` was deleted.** It was `report − 55 minutes`, flat. No home address, no distance, no
+traffic, no setting. She already carries an airline app that gives her report and e-gate, so a
+subtraction she can do in her head was the one row on the card that told her nothing.
+
+### The layover panel reaches the day the flight home lands
+
+`restForDay` matched `landing day ≤ day ≤ next DEPARTURE day`. EK192 leaves Lisbon at 14:20 on the
+1st and touches Dubai at 01:30 on the 2nd, and **both days render the same trip card** — so one of
+the two carried the Lisbon panel and the other did not, with nothing on screen to explain the
+difference. The window now ends at the outbound's LANDING (`nextArrUtc`), so the panel lives on
+every day of the duty the layover feeds.
+
+### The timeline stagger could only ever play once
+
+A CSS entry animation fires once per element. A pairing renders the same trip — same `trip.id`,
+so the same `DayDetailCard`, so the same rows — on every day it spans, so tapping 1 Sept and then
+2 Sept animated nothing at all: React kept the DOM nodes and only the panel below them changed.
+`TripSummaryLines` takes a `timelineKey`, and the day card passes `isoDate`, which remounts the
+rows per day. No animation library: the fix is one prop, and `motion` would have been ~30kB to
+replace a class that already works.
+
+**Testing this needed care, and the first version of the test was wrong.** Counting
+`animationstart` events straight after switching days passed with the fix reverted — rows enter at
+`70ms * index`, so a listener installed while the FIRST day's timeline was still settling caught
+its trailing rows and counted them as the second day's. `e2e/duty-card-report.spec.ts` now waits
+for every `.tl-enter` animation to reach `playState === "finished"` before it starts counting.
+With that wait in place, reverting the fix gives 0 starts.
+
+---
+
 ## 2026-08-31 (later)
 
 ### The morning she lands is a day on the calendar, and it is called an arrival
@@ -1022,6 +1075,9 @@ appeared on collapse went with it (unwanted), and the month header no longer dis
 - **Report time was removed from the card, then deliberately restored.** It was first cut as a
   run-on sentence (`Report 08:10 · leave home 07:15 · now`); the board gives it a labelled row that
   reads at a glance. Don't remove it again without checking this line.
+  *Amended 2026-08-31:* it left the board, but not the card — the timeline carries it, labelled and
+  amber. What this line protects is report having a labelled row of its own, and it still does. See
+  "Report is printed once, and 'Leave home' is gone".
 - Trip length shows only on multi-day pairings; "1 day" on a turnaround is noise.
 - **Weather and sunset were prototyped and deliberately not built.** They need airport lat/lng
   (a seed column) plus a weather API. Two fabricated tiles are worse than none.
