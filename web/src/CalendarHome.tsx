@@ -92,6 +92,7 @@ type TimelineRow = {
  * still finishes settling quickly — under reduced motion that class applies no animation at all,
  * so the detail simply renders present. */
 function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
+  const dutyStart = legs[0]!;
   const rows: TimelineRow[] = [];
 
   legs.forEach((leg, index) => {
@@ -125,12 +126,27 @@ function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
         </>
       ),
     });
+    // The landing DATE, spelled out, when the sector crosses a local day. This is the one thing
+    // the DEP/ARR board above used to say that the timeline did not, so it moved here when the
+    // board went. Not a "+1" to add: the person reading it is waiting at an arrivals barrier and
+    // needs a date, and "+1" off a departure date in another country is arithmetic nobody does
+    // correctly at 1am.
+    // Measured from the day the DUTY started, not from this leg's own departure. EK448 leaves
+    // Dubai on the Tuesday, and its second sector both leaves Singapore and lands in Auckland on
+    // the Wednesday — leg-relative that is a same-day sector and says nothing, while the fact
+    // someone waiting needs is that she is down on the Wednesday.
+    const landsOnAnotherDay =
+      dayOffset(dutyStart.depUtc, leg.arrUtc, dutyStart.depTz, leg.arrTz) !== 0;
+    const landDayLabel = formatLocal(leg.arrUtc, leg.arrTz, { withDate: true })
+      .split(" ")
+      .slice(0, 2)
+      .join(" ");
     rows.push({
       key: `lands-${leg.id}`,
       time: formatLocal(leg.arrUtc, leg.arrTz),
       icon: "◌",
       iconTone: "text-ink-muted",
-      label: "Lands",
+      label: landsOnAnotherDay ? `Lands · ${landDayLabel}` : "Lands",
       sub: <StationLine iata={leg.dest} shift={clockShiftHours(leg.depUtc, leg.depTz, leg.arrUtc, leg.arrTz)} />,
     });
   });
@@ -233,7 +249,6 @@ function TripSummaryLines({
   const routeChain = [legs[0]!.origin, ...legs.map((leg) => leg.dest)].filter(
     (stop, index, all) => index === 0 || stop !== all[index - 1],
   );
-  const arrOffset = dayOffset(firstLeg.depUtc, lastLeg.arrUtc, firstLeg.depTz, lastLeg.arrTz);
   // Out of base and back on the same local day: a turnaround. Worth naming, because on the card
   // it otherwise reads as an ordinary duty with an odd route chain — and the ground time at the
   // outstation is transit, which the timeline now says too.
@@ -248,15 +263,9 @@ function TripSummaryLines({
   const span = calendarSpan(legs, HOME_BASE_IATA);
   const tripDays = span ? dayOffset(span.firstDepUtc, span.endUtc, homeTz, homeTz) + 1 : 1;
   // Weekday + day + month only: the year is never in question on a roster. Read in the home
-  // zone so it matches the calendar day this card belongs to; the ARR row carries the landing
-  // date separately, which is the one a red-eye actually needs.
+  // zone so it matches the calendar day this card belongs to; the timeline's Lands row carries
+  // the landing date separately, which is the one a red-eye actually needs.
   const depDate = formatLocal(firstLeg.depUtc, homeTz, { withDate: true }).split(" ").slice(0, 3).join(" ");
-  // "Fri 28" — weekday and day, in the zone the ARR time itself is read in, so the two halves
-  // of that row cannot describe different places.
-  const arrDayLabel = formatLocal(lastLeg.arrUtc, lastLeg.arrTz, { withDate: true })
-    .split(" ")
-    .slice(0, 2)
-    .join(" ");
   const duration = formatDuration(firstLeg.depUtc, lastLeg.arrUtc);
 
   return (
@@ -287,36 +296,18 @@ function TripSummaryLines({
         {actions}
       </div>
 
-      {/* Board rows: label left (small, uppercase, tracked, muted), value right (tabular). Dashed
-          hairlines between rows read as the split-flap rule this direction is named for; a
-          justify-between row never collides at 390px the way the old rail's centered duration
-          badge did.
+      {/* The DEP/ARR board is GONE, removed 2026-08-31. With REPORT already off it, every row it
+          had was the timeline's own words a few lines further down: DEP 07:15 above Departs
+          07:15, ARR 12:50 above Lands 12:50, and the elapsed figure above "8h 36m airborne".
+          The one thing it said that the timeline did not — the landing DATE on a sector that
+          crosses a local day — moved onto the Lands row.
 
-          DEP and ARR only. REPORT used to head this board and was also the second row of the
-          timeline below it, at the same time, in the same zone — on a single-sector duty three
-          of the board's rows were a second printing of the timeline. The timeline keeps it,
-          amber, because that is where it sits in the order she lives the day. */}
-      <div className="mt-4 flex flex-col divide-y divide-dashed divide-edge">
-        <div className="flex items-baseline justify-between py-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">Dep</span>
-          <span className="num text-base text-ink">{formatLocal(firstLeg.depUtc, firstLeg.depTz)}</span>
-        </div>
-        <div className="flex items-baseline justify-between py-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">Arr</span>
-          <span className="num text-base text-ink">
-            {/* The day it lands, spelled out, not a +N to add up. The person reading this is
-                waiting at an airport barrier and needs a date, and "+2" off a departure date
-                in another country is arithmetic nobody does correctly at 1am. Only when the
-                landing is on a different local day than the departure — otherwise it is noise. */}
-            {arrOffset !== 0 && (
-              <span className="text-ink-muted">{arrDayLabel} · </span>
-            )}
-            {formatLocal(lastLeg.arrUtc, lastLeg.arrTz)}
-          </span>
-        </div>
-      </div>
-
-      {duration && <p className="num mt-1.5 text-right text-sm text-ink-muted">{duration}</p>}
+          The elapsed time survives only on a multi-leg pairing, where it means something the
+          per-leg airborne figures do not: the whole trip, ground time included. On a single
+          sector it is the airborne figure again, to the minute. */}
+      {legs.length > 1 && duration && (
+        <p className="num mt-3 text-right text-sm text-ink-muted">{duration} total</p>
+      )}
 
       {showTimeline && <TripTimeline key={timelineKey} legs={legs} />}
     </>

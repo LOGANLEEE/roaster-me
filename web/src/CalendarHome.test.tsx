@@ -290,16 +290,23 @@ describe("CalendarHome", () => {
     expect(screen.getByText("Mon")).toBeInTheDocument();
 
     // Next-duty card: FULL route chain (every stop, not just endpoints) + flight/trip-length
-    // muted line, then the departure-board rows (DEP/ARR) and the duration.
+    // muted line, then the timeline. The DEP/ARR board is gone — every row it had was the
+    // timeline's own words a few lines below it.
     const card = screen.getByTestId("next-duty-card");
     expect(card).toHaveTextContent("DXB → SIN → AKL");
     expect(card).toHaveTextContent("EK448 · Tue 11 Aug · 2 days");
     expect(card).toHaveTextContent("06:15"); // dep: firstLeg.depUtc in Asia/Dubai
     expect(card).toHaveTextContent("16:20"); // arr: lastLeg.arrUtc in Pacific/Auckland
+    // Each of those times is printed ONCE, by the timeline, not once there and once on a board.
+    expect(card.textContent?.match(/06:15/g) ?? []).toHaveLength(1);
+    expect(card.textContent?.match(/16:20/g) ?? []).toHaveLength(1);
     // The landing day is spelled out rather than left as a "+1" to add to a date in another
-    // country. Auckland is a calendar day ahead of the Dubai departure.
-    expect(card).toHaveTextContent("Wed 12 · 16:20");
-    expect(card).toHaveTextContent("1d 2h"); // elapsed time, kept from the old sector rail
+    // country — it moved onto the Lands row when the board went. Auckland is a calendar day
+    // ahead of the Dubai departure of that sector.
+    expect(card).toHaveTextContent("Lands · Wed 12");
+    // Elapsed time survives only because this is a multi-leg pairing, where it means the whole
+    // trip including ground time — something no per-leg airborne figure says.
+    expect(card).toHaveTextContent("1d 2h total");
     // The preview carries the timeline too. It used to stop at the board rows, which is what
     // "day 22 renders without details" was: the home screen showed a route and three times,
     // and everything else was one tap away with nothing on screen saying so.
@@ -804,12 +811,12 @@ describe("CalendarHome", () => {
       expect(timeline).toHaveTextContent("11h 20m airborne"); // leg 0: 02:15Z -> 13:35Z
       expect(timeline).toHaveTextContent("Lands");
       expect(timeline).toHaveTextContent("21:35"); // leg 0 arrUtc in Asia/Singapore
-      // The summary board rows sit above the timeline, not swapped out for it — DEP/ARR only,
-      // and report appears nowhere on the card.
+      // No board above the timeline any more, and report appears nowhere on the card.
       const detail = screen.getByTestId("day-detail-card");
-      expect(detail).toHaveTextContent(/dep/i);
-      expect(detail).toHaveTextContent(/arr/i);
       expect(detail).not.toHaveTextContent(/report/i);
+      // "DEP"/"ARR" as standalone board labels are gone; "Departs"/"Lands" are the timeline's.
+      expect(detail.textContent).not.toMatch(/\bDEP\b/);
+      expect(detail.textContent).not.toMatch(/\bARR\b/);
     });
 
     it("remounts the timeline when another day of the SAME trip is picked, so the stagger replays", async () => {
@@ -851,7 +858,9 @@ describe("CalendarHome", () => {
       expect(timeline).not.toHaveTextContent("Layover · SIN");
       expect(timeline).toHaveTextContent("2h");
       expect(screen.getAllByText("Departs")).toHaveLength(2);
-      expect(screen.getAllByText("Lands")).toHaveLength(2);
+      // One of the two carries the landing date ("Lands · Wed 12"): this pairing leaves Dubai on
+      // the Tuesday and is down in Auckland on the Wednesday.
+      expect(screen.getAllByText(/^Lands( · .+)?$/)).toHaveLength(2);
     });
 
     it("keys the grid to HOME BASE, not to wherever the next duty happens to depart", async () => {

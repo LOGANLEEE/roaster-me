@@ -8,6 +8,48 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31 (the board goes)
+
+### The DEP/ARR board was deleted — with REPORT gone, it was the timeline twice
+
+Reported as "dep, arr has duplication", and it was right. The board read
+
+    DEP                07:15
+    ARR                12:50
+                      8h 36m
+
+directly above a timeline reading `07:15 Departs / 8h 36m airborne` and `12:50 Lands`. Removing
+REPORT earlier the same day had left a board whose every remaining row was the words underneath
+it, four lines apart.
+
+**The one thing it said that the timeline did not: the landing DATE** on a sector that crosses a
+local day (`ARR Wed 12 · 16:20`). That moved onto the Lands row — `Lands · Wed 12` — and is
+measured **from the day the duty started, not from that leg's own departure**. EK448 leaves Dubai
+on the Tuesday and its second sector both leaves Singapore and lands in Auckland on the
+Wednesday: leg-relative that is a same-day sector and says nothing, while the fact someone waiting
+needs is that she is down on the Wednesday. Getting this wrong is what the first version did, and
+the existing red-eye test caught it.
+
+**The elapsed figure survives only on a multi-leg pairing** (`1d 2h total`), where it means the
+whole trip including ground time — something no per-leg airborne figure says. On a single sector
+it was the airborne figure again, to the minute, which is exactly the duplication being removed.
+
+### "free until report" stays, and it is not an inconsistency
+
+Asked, reasonably: report is off the card, so why does the layover panel still say
+`23h 59m free until report`?
+
+Because it is not printing a report time — it is naming what the number is counted TO. Landing to
+next report is the figure she plans a layover against, and it is the one thing a generic travel
+assistant cannot know; `MIN_LAYOVER_FREE_HOURS` and the whole transit-vs-layover split are built
+on it. Drop the word and `23h 59m free` no longer says free until when, which is the only reason
+the number is worth printing.
+
+`formatLayoverBrief`'s `REPORT` line stays for the same reason: that text is read by a model, not
+by her, and it is the roster context the assistant is being handed.
+
+---
+
 ## 2026-08-31 (calendar taps during the month slide)
 
 ### The e2e suite was not flaky. A click during the month slide is genuinely lost.

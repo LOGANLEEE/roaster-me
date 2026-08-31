@@ -58,7 +58,9 @@ test("boarding partway: the picked date is the sector she flies, not the one the
   await pickCalendarDay(page, BOARD_DAY);
   const card = page.getByTestId("day-detail-card");
   await expect(card).toContainText("10 Feb");
-  await expect(card).toContainText("11 · 00:30");
+  await expect(card).toContainText("00:30");
+  // The landing date rides the Lands row since the DEP/ARR board was deleted on 2026-08-31.
+  await expect(card).toContainText(/Lands · \w{3} 11/);
   // The route headline is her duty alone.
   await expect(card).toContainText("GRU → DXB");
 
