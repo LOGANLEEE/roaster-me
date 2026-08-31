@@ -292,6 +292,55 @@ describe("TripsCalendar", () => {
     expect(onPickDay).toHaveBeenCalledWith("2026-08-01");
   });
 
+  it("marks the neighbouring month's days that this grid happens to draw", () => {
+    // August's grid carries the first week of September. Those cells used to render blank
+    // whatever was on them, because the marks were computed for the RENDERED month only — so a
+    // pairing that flew out on 31 Aug and landed on 1 Sep had its band stop dead at the month
+    // edge, on the one screen the person waiting at home was looking at.
+    const acrossTheEdge: TripWithFlights = {
+      ...trip,
+      id: "trip-sept",
+      flights: [
+        {
+          ...trip.flights[0]!,
+          id: "f-out",
+          dest: "LIS",
+          depUtc: "2026-08-31T03:15:00.000Z", // 31 Aug 07:15 Dubai
+          arrUtc: "2026-08-31T11:35:00.000Z",
+          arrTz: "Europe/Lisbon",
+        },
+        {
+          ...trip.flights[0]!,
+          id: "f-home",
+          origin: "LIS",
+          dest: "DXB",
+          depUtc: "2026-09-01T13:20:00.000Z",
+          arrUtc: "2026-09-01T21:30:00.000Z", // 2 Sep 01:30 Dubai — lands after midnight
+          depTz: "Europe/Lisbon",
+          legSeq: 1,
+        },
+      ],
+    };
+
+    render(
+      <TripsCalendar
+        now={now}
+        trips={[acrossTheEdge]}
+        homeTz="Asia/Dubai"
+        onPickDay={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("day-mark-2026-08-31")).toHaveTextContent("↗LIS");
+    // The September cell is drawn by August's grid and now carries its own duty.
+    expect(screen.getByTestId("calendar-day-2026-09-01").className).toContain("bg-accent-soft");
+    expect(screen.getByTestId("day-mark-2026-09-01")).toHaveTextContent("↙LIS");
+    // And the run reads as one object across the edge rather than two boxes sharing a colour.
+    expect(screen.getByTestId("calendar-day-2026-08-31").className).toContain("rounded-r-none");
+    // A day she is genuinely home for stays clean, next month or not.
+    expect(screen.getByTestId("calendar-day-2026-09-02").className).not.toContain("bg-accent-soft");
+  });
+
   it("navigates to the next and previous month via chevrons", async () => {
     const user = userEvent.setup();
     render(

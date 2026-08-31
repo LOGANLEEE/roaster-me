@@ -65,6 +65,15 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
   await pickCalendarDay(page, LAYOVER_DAY);
   await expect(page.getByTestId("day-detail-card")).toContainText(/no duty/i);
 
+  // A layover day has no leg DEPARTING on it, so it falls into the empty-day branch — but it is
+  // not a free day. Opening the add form here put the cursor straight into the flight-number box
+  // and threw the phone keyboard up over the city guide she came to read. It asks first now.
+  await expect(page.getByTestId("add-duty-here")).toBeVisible();
+  await expect(page.getByTestId("flightno-input")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => document.activeElement?.getAttribute("data-testid")),
+  ).not.toBe("flightno-input");
+
   const panel = page.getByTestId("layover-brief");
   await expect(panel).toBeVisible();
   // Inside the day card, not stacked beside it — one day should read as one thing.
@@ -75,6 +84,11 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
   // Free time is landing -> REPORT, never landing -> departure. Landing 22:00 Sydney on the
   // 10th, report 90 minutes before an 18:00 departure on the 12th: 1d 18h, not 1d 20h.
   await expect(page.getByTestId("layover-free")).toHaveText("1d 18h");
+
+  // Asking for it still gets the form AND the cursor — the keyboard is right when it was
+  // requested, wrong when it was not.
+  await page.getByTestId("add-duty-here").click();
+  await expect(page.getByTestId("flightno-input")).toBeFocused();
 
   // --- The hotel field must not trip iOS zoom. ---
   const hotelFontPx = await page

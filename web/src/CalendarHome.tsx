@@ -341,6 +341,9 @@ function DayDetailCard({
   // flight-no field) instead of sitting on its just-submitted preview while the parent's
   // refetch is still in flight.
   const [addFormKey, setAddFormKey] = useState(0);
+  /** Whether she has asked for the add form on a day that is already part of a journey. Reset
+   * per day by the `key={isoDate}` on this card's empty-day call site. */
+  const [addingHere, setAddingHere] = useState(false);
   const legs = trip ? [...trip.flights].sort((a, b) => a.legSeq - b.legSeq) : [];
   const firstLeg = legs[0] ?? null;
   const lastLeg = legs[legs.length - 1] ?? null;
@@ -426,7 +429,20 @@ function DayDetailCard({
         {/* The day in the middle of a layover: no duty, and the one she is most likely to be
             planning. "No duty" alone is true and useless here. */}
         {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
-        {readOnly ? null : (
+        {readOnly ? null : layoverRest && !addingHere ? (
+          // A layover day has no leg DEPARTING on it, so it lands in this branch — but it is
+          // not a free day, and opening the form here put the cursor in the flight-number box
+          // and threw the keyboard up over a city guide she was reading. A day that is part of
+          // a journey asks first, exactly like a day that already holds a duty does.
+          <button
+            type="button"
+            data-testid="add-duty-here"
+            onClick={() => setAddingHere(true)}
+            className="min-h-[44px] rounded border border-dashed border-edge px-3 py-2 text-sm text-ink-muted transition-colors duration-[120ms] hover:border-accent hover:text-accent"
+          >
+            + Add a duty
+          </button>
+        ) : (
         <AddTripForm
           key={`${isoDate}-${addFormKey}`}
           isoDate={isoDate}
@@ -659,6 +675,9 @@ function DayDetail({
     return (
       <div className="flex flex-col gap-3">
         <DayDetailCard
+          // Remounted per day, so "I asked for the form on THIS layover day" does not follow
+          // her onto the next one.
+          key={isoDate}
           isoDate={isoDate}
           trip={null}
           homeTz={homeTz}

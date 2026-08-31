@@ -145,18 +145,26 @@ export default function TripsCalendar({
     // Union, not replacement: a roster the walk cannot interpret still marks everything the
     // per-trip spans marked. The one day both sources now deliberately give up is the morning a
     // red-eye lands back at base — she is home for all of it, and marking it said otherwise.
-    const dayMarks = tripDaysInMonth(
-      [
-        ...tripSpans.map(({ firstDepUtc, endUtc }) => ({ firstDepUtc, endUtc })),
-        ...awaySpans(
-          tripSpans.map(({ trip }) => trip),
-          HOME_BASE_IATA,
-        ),
-      ],
-      year,
-      month,
-      homeTz,
-    );
+    const spans = [
+      ...tripSpans.map(({ firstDepUtc, endUtc }) => ({ firstDepUtc, endUtc })),
+      ...awaySpans(
+        tripSpans.map(({ trip }) => trip),
+        HOME_BASE_IATA,
+      ),
+    ];
+    // A month grid carries its neighbours' edge days: the first week of September is drawn in
+    // August's grid, and the last days of July in it too. Marking only the RENDERED month left
+    // those cells blank on days the crew member was still away — EK192 lands at base on 1 Sep
+    // and August's grid showed the band stopping dead at the 31st. Mark the neighbours as well
+    // and let the grid use whatever it happens to be showing. The band's own joining logic
+    // reads `dayMarks` and never `inMonth`, so it now carries across the month edge by itself.
+    const before = shiftMonth(year, month, -1);
+    const after = shiftMonth(year, month, 1);
+    const dayMarks = new Map([
+      ...tripDaysInMonth(spans, before.year, before.month, homeTz),
+      ...tripDaysInMonth(spans, after.year, after.month, homeTz),
+      ...tripDaysInMonth(spans, year, month, homeTz),
+    ]);
     // Direction glyphs come from the real trip days only: an optimistic day has no legs yet, and
     // the layover fallback would otherwise label it with a station from some earlier trip.
     const dutyMarks = dutyDayMarks(
@@ -166,10 +174,11 @@ export default function TripsCalendar({
       dayMarks.keys(),
     );
 
-    const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
+    // Scoped to the dates this grid actually draws rather than to the month, for the same
+    // reason: a day added into the trailing week is on screen and should look added.
+    const drawn = new Set(grid.flat().map((cell) => cell.iso));
     for (const iso of optimisticIsoDates ?? []) {
-      if (iso.startsWith(monthPrefix) && !dayMarks.has(iso))
-        dayMarks.set(iso, "away");
+      if (drawn.has(iso) && !dayMarks.has(iso)) dayMarks.set(iso, "away");
     }
 
     return { year, month, grid, dayMarks, dutyMarks };
@@ -415,8 +424,9 @@ export default function TripsCalendar({
                   // A run of away days is drawn as ONE band, not as neighbouring boxes that
                   // happen to share a colour: inner corners square off and the 0.5rem grid gap is
                   // bridged, so a week away reads as a single object. Runs break at the week edge
-                  // (column 0 and 6) because a band cannot cross a row, and at the month edge
-                  // because dayMarks only covers the rendered month.
+                  // (column 0 and 6) because a band cannot cross a row — and only there now:
+                  // `dayMarks` covers the neighbouring months' edge days too, so a run that
+                  // crosses into the next month stays one object.
                   const column = cellIndex % 7;
                   const joinsLeft =
                     hasTrip &&

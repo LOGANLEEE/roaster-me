@@ -179,6 +179,64 @@ describe("AddTripForm", () => {
     expect(vi.mocked(confirmSchedule).mock.calls[0]?.[0]).toMatchObject({ origin: "GIG" });
   });
 
+  // Times alone never say WHICH DAY they fall on, and a multi-leg flight walks the date
+  // forward — picking a boarding point re-anchors the whole routing (see the test above), and
+  // that shift was invisible on screen. Same EK248 fixture: assert the per-leg dates the
+  // preview now shows, and that they move when the boarding point changes.
+  it("preview: each leg shows its resolved date, and it shifts when boarding point changes", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(lookupSchedule).mockResolvedValue({
+      legs: [
+        {
+          legSeq: 0,
+          origin: "EZE",
+          dest: "GIG",
+          depLocal: "22:25",
+          arrLocal: "01:10",
+          dayOffset: 1,
+          originTz: "America/Argentina/Buenos_Aires",
+          destTz: "America/Sao_Paulo",
+          confirmCount: 2,
+        },
+        {
+          legSeq: 1,
+          origin: "GIG",
+          dest: "DXB",
+          depLocal: "03:05",
+          arrLocal: "00:30",
+          dayOffset: 1,
+          originTz: "America/Sao_Paulo",
+          destTz: "Asia/Dubai",
+          confirmCount: 2,
+        },
+      ],
+    });
+
+    render(
+      <AddTripForm isoDate="2026-08-26" homeTz="Asia/Dubai" onSubmitted={vi.fn()} />,
+    );
+
+    await user.type(screen.getByTestId("flightno-input"), "248");
+    await vi.advanceTimersByTimeAsync(400);
+    await screen.findByTestId("autofill-card");
+
+    // Default boarding is leg 0 (EZE): EZE departs the 26th and lands GIG the 27th; GIG
+    // departs the 27th and lands DXB the 28th.
+    let depDates = screen.getAllByTestId("autofill-dep-date");
+    let arrDates = screen.getAllByTestId("autofill-arr-date");
+    expect(depDates.map((el) => el.textContent)).toEqual(["Wed 26 Aug", "Thu 27 Aug"]);
+    expect(arrDates.map((el) => el.textContent)).toEqual(["Thu 27 Aug", "Fri 28 Aug"]);
+
+    // Boarding at GIG re-anchors the 26th onto the GIG departure: EZE slides back to the
+    // 25th, and GIG->DXB now lands the 27th, not the 28th.
+    await user.click(screen.getByTestId("boarding-GIG"));
+
+    depDates = screen.getAllByTestId("autofill-dep-date");
+    arrDates = screen.getAllByTestId("autofill-arr-date");
+    expect(depDates.map((el) => el.textContent)).toEqual(["Tue 25 Aug", "Wed 26 Aug"]);
+    expect(arrDates.map((el) => el.textContent)).toEqual(["Wed 26 Aug", "Thu 27 Aug"]);
+  });
+
   it("add flow: happy path posts the same UTC payload as the original stepper, then fires confirmSchedule and onSubmitted", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     vi.mocked(lookupSchedule).mockResolvedValue({
