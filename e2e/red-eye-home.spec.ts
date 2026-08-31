@@ -7,9 +7,9 @@ import { UNKNOWN_FLIGHT_NO, clearRoster, expectRosterCount, openAddForm, pickCal
  * and labelled it "layover · DXB", a day down-route at her own home airport. The person waiting
  * read that as "she got back on Thursday" when she walked in on Friday morning.
  *
- * The duty stays on the day it is flown. What changes is the day AFTER: she is home for all of
- * it, so the calendar says nothing there, and the card spells out the landing date instead of
- * leaving a "+2" to add to a departure date in Argentina.
+ * The duty stays on the day it is flown, and the morning after carries an ARRIVAL mark rather
+ * than another day down-route. The card spells out the landing date too, instead of leaving a
+ * "+2" to add to a departure date in Argentina.
  *
  * Dates are in January 2027, clear of every other spec's range, so a shared account cannot make
  * one spec's leftovers look like another's run.
@@ -72,9 +72,15 @@ test("a red-eye home ends the away run on the day it is flown, not on the mornin
   await expect(page.getByTestId(`day-mark-${RETURN_DAY}`)).toContainText("EZE");
   await expect(page.getByTestId(`day-mark-${RETURN_DAY}`)).toContainText("↙");
 
-  // The 16th is a morning at home. Nothing on it — no band, no glyph, no station code.
-  await expect(cell(LANDING_DAY)).not.toHaveClass(/bg-accent-soft/);
-  await expect(page.getByTestId(`day-mark-${LANDING_DAY}`)).toHaveCount(0);
+  // The 16th is the morning she lands, at 00:30. It belongs to the trip and it says so — but as
+  // an ARRIVAL, not as another day down-route. "layover · DXB" was the original bug; dropping
+  // the day entirely was the overcorrection that left the calendar silent about the one morning
+  // the person waiting is looking for.
+  await expect(cell(LANDING_DAY)).toHaveClass(/bg-accent-soft/);
+  await expect(page.getByTestId(`day-mark-${LANDING_DAY}`)).toContainText("↙");
+  await expect(page.getByTestId(`day-mark-${LANDING_DAY}`)).toContainText("DXB");
+  // And no further: the 17th is hers.
+  await expect(page.getByTestId("calendar-day-2027-01-17")).not.toHaveClass(/bg-accent-soft/);
 
   // The card carries the landing DATE, not a day offset to add to a date in another country.
   await pickCalendarDay(page, RETURN_DAY);

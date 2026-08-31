@@ -32,6 +32,7 @@ const DAY_GLYPH: Record<DayKind, string> = {
   return: "↙",
   turnaround: "⇄",
   sector: "→",
+  arrives: "↙",
   layover: "·",
 };
 
@@ -44,6 +45,7 @@ const DAY_TONE: Record<DayKind, string> = {
   return: "text-ink",
   turnaround: "text-accent",
   sector: "text-ink-muted",
+  arrives: "text-ink",
   layover: "text-ink-muted",
 };
 
@@ -52,6 +54,7 @@ const DAY_LABEL: Record<DayKind, string> = {
   return: "return from",
   turnaround: "turnaround via",
   sector: "sector to",
+  arrives: "arrives at",
   layover: "layover at",
 };
 // Swipe thresholds. 50px of horizontal travel rules out an accidental brush; the 1.5x

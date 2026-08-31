@@ -11,11 +11,16 @@ export type DayKind =
   | "turnaround"
   /** Flies between two outstations (no home-base leg). */
   | "sector"
+  /** Lands back at home base on a day she did not depart on — the flight home was boarded
+   * yesterday and crossed local midnight. Distinct from "return", which is the day the duty is
+   * FLOWN: a red-eye home owns both, and they are different facts to the person waiting. */
+  | "arrives"
   /** Down-route day with no departure - slip/layover. */
   | "layover";
 
 /** `code` is the station the glyph points at: the outstation reached (outbound/turnaround/
- * sector), the station flown home from (return), or the station slept at (layover). */
+ * sector), the station flown home from (return), the base she lands at (arrives), or the
+ * station slept at (layover). */
 export type DayMark = { kind: DayKind; code: string };
 
 type LegLike = { origin: string; dest: string; depUtc: string; arrUtc: string };
@@ -49,6 +54,16 @@ export function dutyDayMarks(
     const legs = legsByDepDay.get(iso);
 
     if (!legs || legs.length === 0) {
+      // Nothing departs today. Two very different days look identical here, and calling both
+      // "layover" is what once printed "layover · DXB" — an outstation day at her own base — on
+      // the morning she actually got home.
+      const landsAtBaseToday = allLegs.find(
+        (leg) => leg.dest === base && localDateKey(leg.arrUtc, homeTz) === iso,
+      );
+      if (landsAtBaseToday) {
+        marks.set(iso, { kind: "arrives", code: base });
+        continue;
+      }
       // Layover: where the crew is standing that day = destination of the last leg that had
       // already landed. Only reached for days inside a span, so a leg always precedes it.
       const landed = allLegs.filter(
@@ -78,13 +93,15 @@ export function dutyDayMarks(
 export type AwaySpan = { firstDepUtc: string; endUtc: string };
 
 /**
- * The stretch a trip should paint on the calendar, as `tripDaysInMonth` wants it.
+ * The stretch a trip should paint on the calendar, as `tripDaysInMonth` wants it: first
+ * departure to last arrival.
  *
- * Not simply first departure to last arrival. A leg that lands at base ends the stretch when she
- * BOARDS it, not when the wheels touch: the flight home from a long layover routinely lands
- * after home-local midnight, and running the span to the landing paints the morning she is
- * already asleep in her own bed as another day down-route. EK248 landed 00:09 on the 28th and
- * the 28th came out marked "layover · DXB" — a day at the outstation she was never at.
+ * This briefly ended a base-bound trip at the BOARDING instead, to keep the morning a red-eye
+ * lands off the band. That fixed the wrong symptom. The complaint was never that the day was
+ * marked — it was that `dutyDayMarks` labelled it "layover · DXB", an outstation day at her own
+ * base. Dropping the day instead meant the calendar said nothing at all about the morning she
+ * walks in, which is the one thing the person waiting is looking for. The label is fixed at
+ * source now (see the "arrives" branch above), so the span can be honest again.
  *
  * `legs` must already be sorted by `legSeq`.
  */
@@ -92,10 +109,7 @@ export function calendarSpan(legs: readonly LegLike[], base: string): TripSpan |
   const first = legs[0];
   const last = legs[legs.length - 1];
   if (!first || !last) return null;
-  return {
-    firstDepUtc: first.depUtc,
-    endUtc: last.dest === base ? last.depUtc : last.arrUtc,
-  };
+  return { firstDepUtc: first.depUtc, endUtc: last.arrUtc };
 }
 
 /**
@@ -107,8 +121,7 @@ export function calendarSpan(legs: readonly LegLike[], base: string): TripSpan |
  * flying, but she is also not coming back.
  *
  * Walking the legs base-to-base finds those days: away opens on a departure from base and closes
- * on the flight home — at the moment she boards it, not when it lands, for the reason spelled
- * out on `calendarSpan`.
+ * when the flight home lands.
  *
  * Two cases the walk has to survive, both caused by a roster that is only ever partly known:
  *
@@ -139,9 +152,9 @@ export function awaySpans(
     }
     lastArrUtc = leg.arrUtc;
     if (openedAt !== null && leg.dest === base) {
-      // Closes where she boards the flight home, not where it lands — same reason as
-      // `calendarSpan`, and it has to match or the two mark sources disagree by a day.
-      spans.push({ firstDepUtc: openedAt, endUtc: leg.depUtc });
+      // Closes on the landing, matching `calendarSpan` — the two sources are unioned, so a
+      // disagreement here shows up as one source painting a day the other does not.
+      spans.push({ firstDepUtc: openedAt, endUtc: leg.arrUtc });
       openedAt = null;
     }
   }
