@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { addDaysIso } from "@danyeowa/shared";
 import { digitsOf, getAirlinePrefix } from "./lib/airlinePrefix";
 import { humanDateLabel } from "./lib/dateLabel";
 import { useTripEntry } from "./useTripEntry";
@@ -140,11 +141,20 @@ export default function AddTripForm({
               ? preview.filter((leg) => leg.flightNo === entry.appendedFlightNo)
               : [];
             const renderLegFields = (leg: AutofillLegDraft, index: number) => {
+              // A multi-leg flight walks the date forward (see legDatesFromPicked), and
+              // choosing a boarding point re-anchors the whole routing around it — so the
+              // resolved date has to be visible per leg, not just implied by the picked date.
+              const arrDate = addDaysIso(leg.depDate, leg.dayOffset);
               return (
                 <div key={leg.legSeq} className="flex flex-col gap-2 border-t border-edge pt-3 first:border-t-0 first:pt-0">
-                  <p className="text-ink">
-                    {leg.origin} → {leg.dest}
-                  </p>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                    <p className="text-ink">
+                      {leg.origin} → {leg.dest}
+                    </p>
+                    <p data-testid="autofill-dep-date" className="text-sm text-ink-muted">
+                      {humanDateLabel(leg.depDate, homeTz)}
+                    </p>
+                  </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <label htmlFor={`autofill-dep-${leg.legSeq}`} className="text-sm text-ink-muted">
                       Dep
@@ -160,7 +170,7 @@ export default function AddTripForm({
                     <label htmlFor={`autofill-arr-${leg.legSeq}`} className="text-sm text-ink-muted">
                       Arr
                     </label>
-                    <span className="inline-flex items-center gap-0.5">
+                    <span className="inline-flex items-center gap-1">
                       <input
                         id={`autofill-arr-${leg.legSeq}`}
                         data-testid="autofill-arr"
@@ -169,7 +179,14 @@ export default function AddTripForm({
                         onChange={(e) => entry.updateAutofillLeg(index, { arrTime: e.target.value })}
                         className="num min-w-[5.5rem] rounded border border-edge bg-card px-2 py-1 text-ink outline-none transition-colors duration-[120ms] focus:border-accent"
                       />
-                      {leg.dayOffset > 0 && <sup className="num text-ink-muted">+{leg.dayOffset}</sup>}
+                      {/* Only shown when the arrival actually lands on a different calendar day
+                          than departure — replaces the old bare "+1" superscript now that the
+                          real date is on screen and would make the two redundant together. */}
+                      {arrDate !== leg.depDate && (
+                        <span data-testid="autofill-arr-date" className="text-sm text-ink-muted">
+                          {humanDateLabel(arrDate, homeTz)}
+                        </span>
+                      )}
                     </span>
                   </div>
                 </div>

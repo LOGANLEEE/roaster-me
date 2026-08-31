@@ -8,6 +8,64 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-08-31
+
+### The grid marks the neighbours' days it happens to draw
+
+A month grid carries its neighbours' edge days — the first week of September is drawn inside
+August's grid. `tripDaysInMonth` was called for the rendered month only, so those cells were
+blank whatever was on them: EK192 lands at base on 1 Sep and August's grid showed the away band
+stop dead at the 31st, on the one screen the person waiting at home was looking at.
+
+`buildMonth` now marks the month before and after as well and merges, current month last. The
+band's joining logic already read `dayMarks` and never `inMonth`, so a run that crosses the month
+edge became one object for free. The optimistic-date loop is scoped to the dates the grid
+actually draws rather than to the month, for the same reason.
+
+Cost is two extra `tripDaysInMonth` calls per panel, six per render. They walk a handful of spans
+into a small Map; not worth memoising.
+
+### A day inside a journey asks before it opens the add form
+
+A layover day has no leg *departing* on it, so `tripsForDay` returns nothing and it falls into
+the empty-day branch — which mounted `AddTripForm`, and the form autofocuses its flight-number
+input. Tapping the middle day of a Buenos Aires layover therefore threw the phone keyboard up
+over the city guide she had come to read, and scrolled the page 224px doing it.
+
+Measured before changing anything: a day with a departure (22 Aug `↗GIG`, 27 Aug `↙EZE`) already
+behaved — focus stays on the day button and a `+ Add another duty` button asks first. Only the
+in-band layover days were wrong.
+
+They now get the same treatment: `+ Add a duty` first, form on request. Asking for it still
+focuses the input — the keyboard is right when it was asked for and wrong when it was not. The
+empty-day card is keyed on `isoDate` so "I asked on THIS day" does not follow her to the next.
+
+The card's own date line said "— no duty" directly above a panel headed "Layover · Buenos Aires",
+which is the same misreading in words that the open form was making in behaviour. On a layover
+day it now reads "— no duty, down-route in Buenos Aires", resolving the city through `useAirport`
+exactly as `StationLine` does and falling back to the bare IATA until it lands. Every existing
+assertion matches `/no duty/i` and still passes.
+
+While here: `Trip · {totalDays} days` on the in-progress card was unconditional, so a turnaround
+read "Trip · 1 days". Pluralised. It has been wrong for as long as the card has existed and was
+only ever visible on a one-day trip that is happening right now.
+
+### The add form shows the date each leg resolves to
+
+The preview listed times only (`Dep 22:25 / Arr 01:10⁺¹`), so a multi-leg flight walking the date
+forward was invisible until after saving — which is exactly how a pairing landed a day late. Each
+leg row now carries its departure date, right-aligned on the route line, and its arrival date next
+to the arrival time when that falls on a different day.
+
+The `⁺N` superscript is gone: it fired on the same condition and said less. It matters more now
+that choosing a boarding point re-dates the whole routing — that movement was previously
+invisible, and is now the point of the row.
+
+Measured at 390px on the widest case (two legs, a day offset on each): card 322/322, page 390/390,
+smallest control font 16px.
+
+---
+
 ## 2026-08-30 (latest)
 
 ### A day that has already passed can be filled in

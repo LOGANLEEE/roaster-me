@@ -474,6 +474,21 @@ describe("CalendarHome", () => {
     expect(card).toHaveTextContent("AKL");
   });
 
+  it("says '1 day', not '1 days', for a turnaround that starts and ends today", async () => {
+    // A day trip is a real roster line, and the counter printed "Trip · 1 days" on it.
+    // `now` sits between the first departure (05:00Z) and the second leg's report (06:30Z), so
+    // the trip is in progress AND a duty is still upcoming — the card only renders for both.
+    vi.mocked(getTrips).mockResolvedValue([turnaroundTrip]);
+
+    render(<CalendarHome now={new Date("2026-08-14T06:00:00.000Z")} />);
+
+    const card = await screen.findByTestId("pairing-progress-card");
+    // No \b: textContent runs the next line straight on ("1 dayday 1 of 1"), so assert the
+    // absence of the plural instead.
+    expect(card).toHaveTextContent(/trip · 1 day(?!s)/i);
+    expect(card).not.toHaveTextContent(/1 days/i);
+  });
+
   it("does not show the pairing progress card for a fully future trip", async () => {
     vi.mocked(getTrips).mockResolvedValue([inProgressTrip]);
     // Genuinely before the trip's first departure (2026-08-09T22:15:00.000Z) - not the
