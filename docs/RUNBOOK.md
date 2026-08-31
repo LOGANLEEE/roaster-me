@@ -209,7 +209,28 @@ subscription expired and it has been removed.
 A status on its own is not a diagnosis. On 2026-08-31 this route answered
 `{"sent":0,"subscriptions":1,"failedWithStatus":[400]}` and there was nothing to act on: Apple
 returns 400 for a malformed VAPID JWT, a bad `k=`, and a body it will not accept. The body is now
-kept and logged.
+kept and logged. With it kept, the same call answered:
+
+```json
+{"status":400,"detail":"{\"reason\":\"VapidPkHashMismatch\"}"}
+```
+
+## Rotating the VAPID keys invalidates every existing subscription
+
+A push subscription is bound, permanently, to the VAPID public key that created it. Replace
+`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` and every subscription taken out under the old pair is
+refused forever — Apple with `400 VapidPkHashMismatch`, not the `404`/`410` that means "gone".
+
+Since 2026-08-31 the scan treats that reason as a dead subscription and deletes the row, so
+Settings shows the toggle off and she can re-enable. Enabling also tears down whatever
+subscription the browser is still holding first, because `pushManager.subscribe()` with a
+different key throws `InvalidStateError` instead of re-keying — that is a dead end the UI can
+only report as "try again".
+
+**So: if you ever regenerate the VAPID pair (`scripts/generate-vapid.mjs`), every user has to
+re-enable notifications.** There is no server-side migration for it; the old key is what the push
+service hashed. Expect `[push] subscription was taken out under a different VAPID key` in the
+logs, once per device, and then silence.
 
 Alerts are driven by the Worker's cron (`*/15`), which runs both scans:
 

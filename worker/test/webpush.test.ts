@@ -201,6 +201,18 @@ describe("sendPush", () => {
     vi.unstubAllGlobals();
   });
 
+  it("treats a VAPID key mismatch as a dead subscription even though it is a 400", async () => {
+    // Production's only subscription, registered 2026-08-10, answered exactly this on
+    // 2026-08-31. A subscription is bound to the VAPID key that created it; replace the key
+    // pair and it is refused forever — but with a 400, so the 404/410 expiry path never saw it
+    // and the row sat there being retried against a service that would never accept it.
+    const body = JSON.stringify({ reason: "VapidPkHashMismatch" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 400 })));
+    const result = await sendPush(fakeSubscription(), { title: "x" }, env);
+    expect(result).toEqual({ ok: false, status: 400, expired: true, detail: body });
+    vi.unstubAllGlobals();
+  });
+
   it("returns expired:true on a 404 Not Found response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     const result = await sendPush(fakeSubscription(), { title: "x" }, env);

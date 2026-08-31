@@ -272,13 +272,29 @@ export type SendPushResult =
        * Discarded until 2026-08-31, which is why a real 400 from Apple was indistinguishable
        * from every other reason a notification might not arrive. A status code alone does not
        * name a cause — 400 covers a malformed JWT, a bad `k=`, a body the service will not
-       * accept, and more. The body says which.
+       * accept, and more. The body says which. It said `VapidPkHashMismatch`.
        */
       detail: string;
     };
 
 /** Push services answer with a short reason string; anything longer is not worth a log line. */
 const MAX_FAILURE_DETAIL = 200;
+
+/**
+ * Apple's reason for "this subscription was created with a different application server key".
+ *
+ * A push subscription is bound to the VAPID public key that created it, permanently. Replace the
+ * key pair and every subscription taken out under the old one is refused forever — with a 400,
+ * not the 404/410 that means "gone", so nothing in the expiry path caught it. Production's single
+ * subscription (registered 2026-08-10) had been failing this way with the reason discarded.
+ *
+ * Matched on the body rather than the status because the status is shared with several unrelated
+ * causes, and matched narrowly rather than treating every 403/400 as fatal: this branch DELETES
+ * the row, so a bad `VAPID_PUBLIC_KEY` of our own would sign every user out of notifications at
+ * once. That is recoverable — she re-enables in Settings — but it should never happen quietly,
+ * which is why it logs under its own name.
+ */
+const VAPID_KEY_MISMATCH = "VapidPkHashMismatch";
 
 // RFC 8291's aes128gcm framing adds a fixed 86-byte header (16 salt + 4 record-size +
 // 1 keyid-len + 65 keyid) plus a 16-byte GCM tag and a 1-byte padding delimiter to the
@@ -349,12 +365,18 @@ export async function sendPush(
     .text()
     .then((text) => text.trim().slice(0, MAX_FAILURE_DETAIL))
     .catch(() => "");
-  console.warn(`[push] send failed status=${res.status} host=${host} detail=${detail || "(empty)"}`);
 
-  return {
-    ok: false,
-    status: res.status,
-    expired: res.status === 404 || res.status === 410,
-    detail,
-  };
+  // 404/410 mean the subscription is gone. A key mismatch means it still exists and can never
+  // work again, which for the caller is the same instruction: drop the row, so the app stops
+  // retrying it every cron and reports her as unsubscribed instead of silently broken.
+  const keyMismatch = detail.includes(VAPID_KEY_MISMATCH);
+  const expired = res.status === 404 || res.status === 410 || keyMismatch;
+
+  console.warn(
+    keyMismatch
+      ? `[push] subscription was taken out under a different VAPID key — dropping it. host=${host} status=${res.status}`
+      : `[push] send failed status=${res.status} host=${host} detail=${detail || "(empty)"}`,
+  );
+
+  return { ok: false, status: res.status, expired, detail };
 }

@@ -109,6 +109,43 @@ nothing logged failures before today, and the 400 is a measurement from 2026-08-
 
 Do not "fix" the JWT from a symptom. Read the body first.
 
+### `VapidPkHashMismatch` — the key was replaced, and every subscription died with it
+
+Reading the body took one deploy and one tap:
+
+    {"status":400,"detail":"{\"reason\":\"VapidPkHashMismatch\"}"}
+
+**A push subscription is bound, permanently, to the VAPID public key that created it.** Replace
+the pair and the push service refuses every send to every subscription taken out under the old
+one. Apple says so with a **400**, not the 404/410 that means "gone", so nothing in the expiry
+path caught it and the row sat there being retried against a service that would never accept it.
+
+This was not a mismatch between two code paths: `/api/push/config` serves `env.VAPID_PUBLIC_KEY`
+and `sendPush` signs `k=` with the same variable. The mismatch is against the past — the
+subscription was registered 2026-08-10 under a key that is no longer the one in the environment.
+**When that replacement happened is NOT established.** `wrangler versions list` only reaches back
+to 2026-08-30 and secrets carry no dates.
+
+Two fixes, because the dead end had two halves:
+
+1. **Server.** `sendPush` marks a `VapidPkHashMismatch` body as `expired`, so the caller drops the
+   row. The subscription is not gone, but it can never work again, and for the caller that is the
+   same instruction. Matched on the body, narrowly, and NOT on bare 403/400: this branch deletes
+   rows, so a bad `VAPID_PUBLIC_KEY` of our own would sign every user out of notifications at
+   once. Recoverable, but it gets its own log line rather than happening quietly.
+2. **Client.** `handleToggleOn` now tears down whatever subscription the browser is still holding
+   before taking a new one. `pushManager.subscribe()` with a different `applicationServerKey`
+   does not re-key an existing subscription — it throws `InvalidStateError`, which this screen
+   turns into "Couldn't enable notifications — try again", forever. Unconditional teardown rather
+   than comparing keys: it only runs on an explicit tap, and `applicationServerKey` comes back as
+   an ArrayBuffer that would have to be re-encoded to compare against the served string.
+
+**Operational rule, now in RUNBOOK.md: regenerating the VAPID pair means every user re-enables
+notifications.** There is no server-side migration; the old key is what the push service hashed.
+
+The lesson is the same one the three defects above taught, one layer up: a status code is not a
+cause, and the system had been discarding the one string that named it.
+
 Not fixed here, because it is not a code problem: the crew member's phone has never granted
 notification permission. Nothing in the Worker can create a subscription she did not accept.
 

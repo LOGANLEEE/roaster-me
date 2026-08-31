@@ -320,6 +320,51 @@ describe("runReportScan", () => {
     vi.unstubAllGlobals();
   });
 
+  it("deletes a subscription that was taken out under a different VAPID key", async () => {
+    // The row can never work again, so leaving it in place means retrying a doomed send every
+    // cron AND reporting the user as subscribed while nothing can reach her. Dropping it makes
+    // Settings show "off", which is the one state from which she can fix it herself.
+    const userId = await makeUser("report-scan-vapid-mismatch@example.com");
+    await addSubscription(userId, "https://web.push.example.com/wrong-key");
+    const flightId = await insertFlight({
+      userId,
+      reportUtc: new Date(NOW_MS + 60 * 60 * 1000).toISOString(),
+    });
+
+    const testEnv = await testVapidEnv();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ reason: "VapidPkHashMismatch" }), { status: 400 }),
+      ),
+    );
+
+    const result = await runReportScan(testEnv, NOW_MS);
+
+    expect(result.expiredSubscriptionsRemoved).toBe(1);
+    expect(result.notified).toBe(0);
+
+    const rows = await db()
+      .select()
+      .from(schema.pushSubscriptions)
+      .where(eq(schema.pushSubscriptions.userId, userId));
+    expect(rows).toHaveLength(0);
+
+    // Nothing was delivered, so the flight is not left stamped either.
+    const [flightRow] = await db().select().from(schema.flights).where(eq(schema.flights.id, flightId));
+    expect(flightRow?.reportNotifiedAt).toBeNull();
+
+    // Take it out of the candidate pool by hand. This file shares one database and the sibling
+    // idempotency test asserts on `scanned`, which counts every candidate in it — and this
+    // flight can never leave the pool on its own now that its only subscription is gone.
+    await db()
+      .update(schema.flights)
+      .set({ reportNotifiedAt: NOW_MS })
+      .where(eq(schema.flights.id, flightId));
+
+    vi.unstubAllGlobals();
+  });
+
   it("puts the claim back when every send fails for a reason that is not an expiry", async () => {
     // 404/410 means the subscription is dead and gets deleted. A 500 means the push service had
     // a bad minute — and that used to burn the flight exactly as hard as a successful send.

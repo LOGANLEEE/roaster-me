@@ -127,6 +127,32 @@ export default function SettingsView({ email, onSignOut }: Props) {
         setPushError("Couldn't enable notifications — try again");
         return;
       }
+
+      // Tear down any subscription this browser is still holding before taking out a new one.
+      //
+      // A subscription is bound to the VAPID key that created it. If that key has since been
+      // replaced, `subscribe()` with the current key does NOT re-key it — it throws
+      // InvalidStateError, which this function's catch turns into "try again", forever. That is
+      // the dead end waiting for anyone whose subscription predates a key change, and it is
+      // exactly the state production's one device was in on 2026-08-31 (Apple was answering
+      // `VapidPkHashMismatch`).
+      //
+      // Unconditional rather than comparing keys: this only runs when she taps enable, and
+      // `applicationServerKey` comes back as an ArrayBuffer that has to be re-encoded to compare
+      // against the served string. Dropping and re-taking is the smaller, surer path. The server
+      // row goes with it, or the old endpoint would linger and be pushed to forever.
+      const stale = await registration.pushManager.getSubscription();
+      if (stale) {
+        // Best effort on the server row: it may already be gone (the scan deletes a subscription
+        // the push service has rejected as un-keyed), and that must not stop her re-subscribing.
+        try {
+          await unsubscribePush(stale.endpoint);
+        } catch {
+          // Nothing to do — the local unsubscribe below is the part that must happen.
+        }
+        await stale.unsubscribe();
+      }
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(config.publicKey),

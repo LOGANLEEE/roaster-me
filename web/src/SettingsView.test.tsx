@@ -129,7 +129,10 @@ describe("SettingsView", () => {
           keys: { p256dh: "p256dh-key", auth: "auth-key" },
         }),
       });
-      const registration = { pushManager: { subscribe } };
+      // Nothing held by this browser yet — the ordinary first-time case.
+      const registration = {
+        pushManager: { subscribe, getSubscription: vi.fn().mockResolvedValue(null) },
+      };
       Object.defineProperty(navigator, "serviceWorker", {
         value: { getRegistration: vi.fn().mockResolvedValue(registration) },
         configurable: true,
@@ -153,6 +156,65 @@ describe("SettingsView", () => {
       );
       await waitFor(() => expect(toggle).toBeChecked());
       expect(await screen.findByTestId("push-lead")).toBeInTheDocument();
+    });
+
+    it("drops a subscription this browser is still holding before taking out a new one", async () => {
+      // A subscription is bound to the VAPID key that created it. Replace the key pair and
+      // `subscribe()` does not re-key the old one — it throws InvalidStateError, which this
+      // screen turns into "try again", forever. Production's one device was in exactly that
+      // state on 2026-08-31, with Apple answering `VapidPkHashMismatch` to every send.
+      const user = userEvent.setup();
+
+      vi.stubGlobal("Notification", {
+        permission: "default",
+        requestPermission: vi.fn().mockResolvedValue("granted"),
+      });
+      vi.stubGlobal("PushManager", class {});
+
+      vi.mocked(api.getPushConfig).mockResolvedValue({
+        publicKey:
+          "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        enabled: true,
+        leadMinutes: 120,
+        arrivalEnabled: true,
+        subscribed: false,
+      });
+
+      const staleUnsubscribe = vi.fn().mockResolvedValue(true);
+      const stale = {
+        endpoint: "https://push.example.com/taken-out-under-the-old-key",
+        unsubscribe: staleUnsubscribe,
+      };
+      const subscribe = vi.fn().mockResolvedValue({
+        toJSON: () => ({
+          endpoint: "https://push.example.com/fresh",
+          keys: { p256dh: "p256dh-key", auth: "auth-key" },
+        }),
+      });
+      const registration = {
+        pushManager: { subscribe, getSubscription: vi.fn().mockResolvedValue(stale) },
+      };
+      Object.defineProperty(navigator, "serviceWorker", {
+        value: { getRegistration: vi.fn().mockResolvedValue(registration) },
+        configurable: true,
+      });
+
+      render(<SettingsView email="pilot@example.com" onSignOut={vi.fn()} />);
+      await user.click(await screen.findByTestId("push-toggle"));
+
+      // The old endpoint goes from the server too, or it lingers there being pushed to forever.
+      await waitFor(() =>
+        expect(api.unsubscribePush).toHaveBeenCalledWith(
+          "https://push.example.com/taken-out-under-the-old-key",
+        ),
+      );
+      await waitFor(() => expect(staleUnsubscribe).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(api.subscribePush).toHaveBeenCalledWith({
+          endpoint: "https://push.example.com/fresh",
+          keys: { p256dh: "p256dh-key", auth: "auth-key" },
+        }),
+      );
     });
 
     it("unsubscribes on toggle-off: DELETEs the subscription and calls unsubscribe()", async () => {
