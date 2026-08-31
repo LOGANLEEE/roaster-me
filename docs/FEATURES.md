@@ -22,7 +22,7 @@ codebase to find out. Status words mean exactly one thing:
 | Add a trip inline on an empty day | Live | Flight-code input appears immediately; airline prefix is a setting, digits only |
 | Turnarounds in one save | Live | Second flight appends to the same preview before saving |
 | Edit / delete on the card | Live | Pencil and bin. Editing is create-then-delete, never the reverse |
-| Trip detail with leg timeline | Live | Report → depart → land, with layovers between sectors — on the day card, which is the only trip surface now |
+| Trip detail with leg timeline | Live | Depart → land, with layovers between sectors — on the day card, which is the only trip surface now. No report row since 2026-08-31: the crew member reads report and e-gate in her airline's own app |
 | Manual entry when a lookup misses | Live | Only appears after a lookup actually returns empty |
 | More than one duty on a day | Live | A turnaround in the morning and a standby that evening are separate trips, not legs. The day card stacks one card per duty, each with its own edit and delete. `tripsForDay()` returns a list; it used to return the first match and stop, which made a second duty invisible |
 | Delete asks in a modal | Live | Native `<dialog>` + `showModal()`, so Esc, focus trap and inert background come from the platform. jsdom implements none of it, so the behaviour is only ever real in e2e |
@@ -44,7 +44,7 @@ codebase to find out. Status words mean exactly one thing:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Report-time alert | Built | Fires at the user's lead (default 120 min) before report |
+| Report-time alert | Built | Fires at the user's lead (default 120 min) before report. Report time is no longer shown on the card, but still drives this. A flight is left unclaimed when the user has no device, and the claim is put back if every send fails, so neither case burns the alert |
 | Arrival alerts, 60 / 30 / 0 min | Live | Verified in production on a real EK373 arrival, delivered to an iOS PWA |
 | Arrival alerts on/off in Settings | Built | `notification_prefs.arrival_enabled`, independent of report alerts |
 | Lead time 30–360 min | Built | Applies to report alerts only; arrival stages are fixed |

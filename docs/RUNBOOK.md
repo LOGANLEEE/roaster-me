@@ -219,6 +219,37 @@ npx wrangler d1 execute danyeowa-db --remote --command \
 
 `arrival_alert_stage` is the smallest offset already sent — `NULL` none, `0` finished.
 
+**A stamp is not proof of delivery.** `report_notified_at` and `arrival_alert_stage` record that a
+send returned 2xx — the push service accepting the message, not a phone showing it. The only
+end-to-end check is `/api/push/test` from the device itself.
+
+First thing to check when "the alert never came": whether that account has a device at all.
+
+```bash
+npx wrangler d1 execute danyeowa-db --remote --command \
+  "SELECT u.email, COUNT(ps.id) AS subs FROM user u \
+   LEFT JOIN push_subscriptions ps ON ps.user_id = u.id GROUP BY u.id;"
+```
+
+On 2026-08-31 that returned one subscription across the whole database. A user with no device is
+now skipped without being claimed, so subscribing later still catches an alert that has not yet
+passed — before that fix, the flight was stamped and lost.
+
+Failed sends log to Workers Logs (`observability` is on in `wrangler.jsonc`):
+
+```
+[push] send failed status=<http status> host=<push service host>
+```
+
+Endpoint host only, never the full URL — its path segment is the subscription's bearer credential.
+
+If wrangler picks the wrong account (`code: 7403`, "not authorized to access this service"), the
+account has to be named explicitly — this login can see four:
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=08d39249abaa892047690aa4c0c34b3a
+```
+
 ## Local sign-in
 
 `logan@example.com` / `123123`. Any other address gets a random code, readable at

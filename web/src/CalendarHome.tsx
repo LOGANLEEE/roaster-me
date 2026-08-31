@@ -77,32 +77,22 @@ type TimelineRow = {
   iconTone: string;
   label: string;
   sub?: React.ReactNode;
-  /** Paints the time and the label amber, not just the dot. Report only. The board above used
-   * to carry that weight; with REPORT gone from it, the timeline is the only place the one
-   * time this app exists to show can be louder than the rest of the day. */
-  emphasis?: boolean;
 };
 
-/** The full duty detail (design "C"): Report -> (Departs -> Lands) per leg, with a Layover row
- * between legs. Report lives HERE and nowhere else now — the board above it carries DEP and ARR
- * only, so the one time that matters is printed once, in the sequence it happens in. Every row
+/** The full duty detail (design "C"): (Departs -> Lands) per leg, with a Layover row between
+ * legs.
+ *
+ * NO REPORT ROW, and none on the board either — removed 2026-08-31 at the user's call. A crew
+ * member's own airline app already gives her report and e-gate, so this card was restating a
+ * number she reads somewhere more authoritative. Report time is still stored, still drives the
+ * push alert, and still sets "free until report" on the layover panel; it just isn't printed
+ * here. The first Departs row inherits the origin's station line, which the report row used to
+ * carry. Every row
  * stagger-enters (`.tl-enter`, tokens.css) at 70ms * index, capped at 400ms so a long timeline
  * still finishes settling quickly — under reduced motion that class applies no animation at all,
  * so the detail simply renders present. */
 function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
-  const firstLeg = legs[0]!;
-
-  const rows: TimelineRow[] = [
-    {
-      key: "report",
-      time: formatLocal(firstLeg.reportUtc, firstLeg.depTz),
-      icon: "●",
-      iconTone: "text-report",
-      label: "Report",
-      emphasis: true,
-      sub: <StationLine iata={firstLeg.origin} />,
-    },
-  ];
+  const rows: TimelineRow[] = [];
 
   legs.forEach((leg, index) => {
     if (index > 0) {
@@ -127,7 +117,12 @@ function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
       iconTone: "text-ink",
       label: "Departs",
       sub: (
-        <p className="num text-sm text-ink-muted">{formatDuration(leg.depUtc, leg.arrUtc)} airborne</p>
+        <>
+          {/* Only the first sector: after that, the Lands and Layover rows above have already
+              named the station she is leaving from. */}
+          {index === 0 && <StationLine iata={leg.origin} />}
+          <p className="num text-sm text-ink-muted">{formatDuration(leg.depUtc, leg.arrUtc)} airborne</p>
+        </>
       ),
     });
     rows.push({
@@ -150,18 +145,12 @@ function TripTimeline({ legs }: { legs: TripWithFlights["flights"] }) {
         >
           {/* w-12 (48px), not w-11 (44px): "00:00" at 5 tabular-num chars needs the extra
               margin so it never clips against a fallback monospace font's advance width. */}
-          <span
-            className={`num w-12 shrink-0 text-sm ${row.emphasis ? "text-report" : "text-ink-muted"}`}
-          >
-            {row.time}
-          </span>
+          <span className="num w-12 shrink-0 text-sm text-ink-muted">{row.time}</span>
           <span aria-hidden="true" className={`${row.iconTone} leading-none`}>
             {row.icon}
           </span>
           <div className="min-w-0 flex-1">
-            <p className={`text-sm ${row.emphasis ? "font-medium text-report" : "text-ink"}`}>
-              {row.label}
-            </p>
+            <p className="text-sm text-ink">{row.label}</p>
             {row.sub}
           </div>
         </div>

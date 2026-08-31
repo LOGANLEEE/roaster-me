@@ -194,17 +194,17 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
 
   // The contrast MATHS lives in lib/contrast.test.ts, against the real tokens.css. What only a
   // real engine can show is whether those tokens are the ones actually in effect — the scoped
-  // `.sky .text-report` override has to beat the plain utility class, or the report time gets
+  // on-sky overrides have to beat the plain utility classes, or text on a storm field gets
   // painted in a colour measured at 3.5:1.
+  //
+  // The report half of this check went with the report time on 2026-08-31: no element on the
+  // card carries `.text-report` any more, so `querySelector` returned null and the assertion
+  // was testing nothing. `.sky .text-report` is still in tokens.css, unused, for the day report
+  // comes back.
   const onSky = await card.evaluate((el) => {
-    const report = el.querySelector(".text-report") as HTMLElement | null;
     const muted = el.querySelector(".text-ink-muted") as HTMLElement | null;
-    return {
-      report: report && getComputedStyle(report).color,
-      muted: muted && getComputedStyle(muted).color,
-    };
+    return { muted: muted && getComputedStyle(muted).color };
   });
-  expect(onSky.report, "report time must use --color-report-on-sky").toBe("rgb(255, 213, 126)");
   expect(onSky.muted, "muted text must use --color-ink-muted-on-sky").toBe("rgb(154, 163, 181)");
 
   // --- The weather mark moves, so it can be spotted rather than read past. ---

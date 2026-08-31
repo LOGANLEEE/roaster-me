@@ -311,5 +311,22 @@ export async function sendPush(
   });
 
   if (res.ok) return { ok: true };
+
+  // The one place a failed push leaves a trace. Every caller used to swallow a non-expiry
+  // failure silently: nothing in D1 and nothing in the logs, so "the alert never arrived" and
+  // "the push service rejected it" looked identical from the outside. `observability` is on in
+  // wrangler.jsonc, so this lands in Workers Logs.
+  //
+  // Host only, never the full endpoint — the path segment is the subscription's bearer
+  // credential and would be readable by anyone with log access.
+  const host = (() => {
+    try {
+      return new URL(subscription.endpoint).host;
+    } catch {
+      return "unparseable-endpoint";
+    }
+  })();
+  console.warn(`[push] send failed status=${res.status} host=${host}`);
+
   return { ok: false, status: res.status, expired: res.status === 404 || res.status === 410 };
 }

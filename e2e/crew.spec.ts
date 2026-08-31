@@ -70,12 +70,17 @@ test("crew: invite, accept, read each other's roster, and stop sharing", async (
   const card = b.page.getByTestId("day-detail-card");
   await expect(card).toContainText(EK412.origin);
 
-  // The whole point of sharing: the person who is NOT crew can see the clock. Report time is
-  // when her day starts; the arrival is when you leave for the airport. Asserting the route
-  // alone would pass on a card that shows dates and cities and no times at all — which is
+  // The whole point of sharing: the person who is NOT crew can see the clock. Asserting the
+  // route alone would pass on a card that shows dates and cities and no times at all — which is
   // exactly what the deleted share link did.
-  await expect(card).toContainText(EK412.reportLocal);
+  //
+  // Report time WAS asserted here and is not any more: it came off the card on 2026-08-31,
+  // because the crew member reads it in her airline's own app. Note that the person on the
+  // other side of this share does NOT have that app — if the shared view should keep report,
+  // this is the assertion to put back, and the card needs a read-only branch to match.
+  await expect(card).toContainText(EK412.depTime);
   await expect(card).toContainText(EK412.arrTime);
+  await expect(card).not.toContainText(/report/i);
 
   // Read-only: no edit, no delete, and no add form on one of their empty days.
   await expect(b.page.getByTestId("day-detail-action")).toHaveCount(0);

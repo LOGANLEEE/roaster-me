@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Airport } from "@danyeowa/shared";
 import CalendarHome from "./CalendarHome";
@@ -294,8 +294,6 @@ describe("CalendarHome", () => {
     const card = screen.getByTestId("next-duty-card");
     expect(card).toHaveTextContent("DXB → SIN → AKL");
     expect(card).toHaveTextContent("EK448 · Tue 11 Aug · 2 days");
-    expect(card).toHaveTextContent(/report/i);
-    expect(card).toHaveTextContent("04:45"); // report: firstLeg.reportUtc in Asia/Dubai
     expect(card).toHaveTextContent("06:15"); // dep: firstLeg.depUtc in Asia/Dubai
     expect(card).toHaveTextContent("16:20"); // arr: lastLeg.arrUtc in Pacific/Auckland
     // The landing day is spelled out rather than left as a "+1" to add to a date in another
@@ -310,12 +308,11 @@ describe("CalendarHome", () => {
     // "Leave home" was report minus a flat 55 minutes — no home, no distance, no traffic in
     // that number, and she already carries an app that gives her report and e-gate.
     expect(card).not.toHaveTextContent(/leave home/i);
-    // Report is printed ONCE, by the timeline. The board above it is DEP/ARR only — it used to
-    // head that board AND be the timeline's second row, the same time twice on one card.
-    expect(card.textContent?.match(/report/gi) ?? []).toHaveLength(1);
-    expect(card.textContent?.match(/04:45/g) ?? []).toHaveLength(1);
-    // ...and it keeps the amber it had on the board: the loudest thing on the card.
-    expect(within(card).getByText("Report").className).toContain("text-report");
+    // Report is not printed at all. It headed the board AND was the timeline's second row —
+    // the same time twice on one card — and the crew member reads it in her airline's own app
+    // anyway. It is still stored, still drives the push alert, just not shown here.
+    expect(card).not.toHaveTextContent(/report/i);
+    expect(card).not.toHaveTextContent("04:45"); // firstLeg.reportUtc in Asia/Dubai
   });
 
   it("shows the calendar skeleton while trips are loading, then replaces it once they resolve", async () => {
@@ -797,20 +794,22 @@ describe("CalendarHome", () => {
       const timeline = await screen.findByTestId("duty-timeline");
       expect(timeline).not.toHaveTextContent("Leave home");
       expect(timeline).not.toHaveTextContent("03:50"); // the old report-minus-55m row
-      expect(timeline).toHaveTextContent("Report");
-      expect(timeline).toHaveTextContent("04:45"); // firstLeg.reportUtc in Asia/Dubai
+      expect(timeline).not.toHaveTextContent("Report");
+      expect(timeline).not.toHaveTextContent("04:45"); // firstLeg.reportUtc in Asia/Dubai
       expect(timeline).toHaveTextContent("Departs");
+      // The origin station line moved here from the deleted report row, so the card still
+      // names where she leaves from rather than only its IATA code in the headline.
+      expect(timeline).toHaveTextContent("DXB");
       expect(timeline).toHaveTextContent("06:15"); // firstLeg.depUtc in Asia/Dubai
       expect(timeline).toHaveTextContent("11h 20m airborne"); // leg 0: 02:15Z -> 13:35Z
       expect(timeline).toHaveTextContent("Lands");
       expect(timeline).toHaveTextContent("21:35"); // leg 0 arrUtc in Asia/Singapore
-      // The summary board rows sit above the timeline, not swapped out for it — but they are
-      // DEP/ARR only now, so the timeline is the only place report is printed.
+      // The summary board rows sit above the timeline, not swapped out for it — DEP/ARR only,
+      // and report appears nowhere on the card.
       const detail = screen.getByTestId("day-detail-card");
       expect(detail).toHaveTextContent(/dep/i);
       expect(detail).toHaveTextContent(/arr/i);
-      expect(detail.textContent?.match(/report/gi) ?? []).toHaveLength(1);
-      expect(within(timeline).getByText("Report").className).toContain("text-report");
+      expect(detail).not.toHaveTextContent(/report/i);
     });
 
     it("remounts the timeline when another day of the SAME trip is picked, so the stagger replays", async () => {
@@ -831,7 +830,7 @@ describe("CalendarHome", () => {
 
       expect(second).not.toBe(first);
       // Same duty either way — this is a remount, not a different trip.
-      expect(second).toHaveTextContent("Report");
+      expect(second).toHaveTextContent("Departs");
       expect(second).toHaveTextContent("11h 20m airborne");
     });
 

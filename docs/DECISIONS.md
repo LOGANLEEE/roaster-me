@@ -10,30 +10,42 @@ obviously better until you know what's underneath it.
 
 ## 2026-08-31 (card cleanup)
 
-### Report is printed once, and "Leave home" is gone
+### Report time is off the card entirely, and "Leave home" with it
 
 The board read `REPORT / DEP / ARR`, and the timeline four lines below it read
 `Leave home / Report / Departs / Lands`. On a single-sector duty three of the board's rows were
 the same three times, in the same zone, twice on one card. Asked what the REPORT column was for,
 there was no answer that survived pointing at the timeline underneath it.
 
-**The board is DEP and ARR. The timeline keeps report, amber, and now paints the time and the
-label rather than only the dot.** Report is the one value this app exists to show, so it does not
-lose its weight — it loses its double. The timeline is where it belongs, because it is the first
-thing that happens in the day rather than a figure in a table.
+It came off the board first, and then off the card altogether, on the user's call. **His reason
+is the only piece of real user evidence this repo has ever had on the question: a crew member
+carries her airline's own app, which gives her report time and e-gate.** This card was restating
+a number she reads somewhere more authoritative.
 
-**Rejected — drop the timeline on single-sector days instead.** It would have removed the station
-names, the body-clock shift and the airborne duration along with the duplication, and left the
-card changing shape depending on how many legs a duty has.
+That reverses "the report time is the single value this app exists to show", which appears above
+in this file and was quoted back at him as if it settled the matter. It did not: it is a note an
+earlier session wrote, never checked against a user. **Citing this file as evidence for what a
+user needs is circular. It records what was decided, not what was true.**
 
-The old line "Report time was removed from the card, then deliberately restored" still stands and
-is not what happened here. That removal turned it into a run-on sentence
-(`Report 08:10 · leave home 07:15 · now`) with no label. It is still labelled, still amber, still
-the loudest row — just not printed twice.
+What remains: `flights.report_utc` is stored, drives the push alert, and sets the layover panel's
+"free until report" — which stays, because it answers a different question (how much of the rest
+is hers). `TripLegsPanel` lost its per-leg `Report` line too; leaving one behind a pencil would
+have been the inconsistency that generates the next question.
+
+The origin's station line moved from the deleted report row onto the first `Departs` row, so the
+card still names the city she leaves from rather than only its IATA code in the headline.
 
 **`Leave home` was deleted.** It was `report − 55 minutes`, flat. No home address, no distance, no
-traffic, no setting. She already carries an airline app that gives her report and e-gate, so a
-subtraction she can do in her head was the one row on the card that told her nothing.
+traffic, no setting — a subtraction she can do in her head faster than she can open the app.
+
+**The consequence to watch: the crew/family view lost it too.** `e2e/crew.spec.ts` used to assert
+that the person reading a SHARED roster can see the report time, with the comment "the whole
+point of sharing: the person who is NOT crew can see the clock". That person does not have the
+airline app the removal is justified by. The assertion now checks DEP and ARR instead. If report
+should survive on the shared card, it needs a read-only branch, and that assertion goes back.
+
+`.sky .text-report` and `--color-report` stay in `tokens.css`, unused. This is a fresh product
+call that may be reversed, and restoring the token would mean re-running the contrast check.
 
 ### The layover panel reaches the day the flight home lands
 
@@ -42,6 +54,42 @@ subtraction she can do in her head was the one row on the card that told her not
 the two carried the Lisbon panel and the other did not, with nothing on screen to explain the
 difference. The window now ends at the outbound's LANDING (`nextArrUtc`), so the panel lives on
 every day of the duty the layover feeds.
+
+### Only one device in production had ever been subscribed to push
+
+Reported as "I never got the notification for today's flight". Measured against production D1 on
+2026-08-31:
+
+    SELECT COUNT(*) FROM push_subscriptions;   ->  1
+
+One row, an Apple endpoint, registered 2026-08-10, belonging to the account that raised the
+report. **The crew member's own account had zero.** Meanwhile eight of her flights carried a
+`report_notified_at`, stamped 110-119 minutes before report — the 120-minute default lead inside a
+15-minute cron, so the scan's timing was never the problem.
+
+Three defects, none of which could be seen from the database alone:
+
+1. **The claim was a receipt.** `claimFlightForNotification` stamped `report_notified_at` and only
+   then looked up subscriptions and sent. A user with no device got every alert recorded as
+   delivered, and because the candidate query filters on that column, registering a phone
+   afterwards could never recover one. The subscription lookup now happens BEFORE the claim, and
+   a candidate with no device is left unclaimed (`skippedNoSubscription`).
+2. **A failed send burned the flight.** 404/410 deletes the dead subscription, but a 500 or a
+   network error left the stamp in place with nothing sent and no retry, ever. The claim is now
+   put back (`releasedAfterSendFailure`), and `runArrivalScan` restores both `arrival_alert_stage`
+   and `arrival_notified_at` rather than leaving a timestamp for a notification nobody got.
+3. **Failure left no trace at all.** `sendPush` returned `{ ok: false, status }` and every caller
+   discarded it — nothing in D1, nothing in the logs, so "the push service rejected it" and "the
+   alert never arrived" were indistinguishable. One `console.warn` in `sendPush` now records
+   status and endpoint HOST. Host only: the endpoint's path segment is the subscription's bearer
+   credential.
+
+**A stamp in `report_notified_at` still is not proof of delivery** — it proves a send returned 2xx,
+which is the push service accepting the message, not a phone showing it. The only end-to-end check
+is `/api/push/test` from the device.
+
+Not fixed here, because it is not a code problem: the crew member's phone has never granted
+notification permission. Nothing in the Worker can create a subscription she did not accept.
 
 ### The timeline stagger could only ever play once
 
@@ -1075,9 +1123,8 @@ appeared on collapse went with it (unwanted), and the month header no longer dis
 - **Report time was removed from the card, then deliberately restored.** It was first cut as a
   run-on sentence (`Report 08:10 · leave home 07:15 · now`); the board gives it a labelled row that
   reads at a glance. Don't remove it again without checking this line.
-  *Amended 2026-08-31:* it left the board, but not the card — the timeline carries it, labelled and
-  amber. What this line protects is report having a labelled row of its own, and it still does. See
-  "Report is printed once, and 'Leave home' is gone".
+  *Superseded 2026-08-31:* report time is off the card entirely, on the user's instruction — the
+  crew member reads it in her airline's own app. See "Report time is off the card entirely".
 - Trip length shows only on multi-day pairings; "1 day" on a turnaround is noise.
 - **Weather and sunset were prototyped and deliberately not built.** They need airport lat/lng
   (a seed column) plus a weather API. Two fabricated tiles are worse than none.

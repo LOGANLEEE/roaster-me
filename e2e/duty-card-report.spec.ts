@@ -5,8 +5,9 @@ import { UNKNOWN_FLIGHT_NO, clearRoster, expectRosterCount, openAddForm, pickCal
  * The duty card after the 2026-08-31 cleanup, measured in a real engine because all three of
  * these are things a unit test cannot see.
  *
- * 1. Report is printed ONCE. It headed the board AND was the timeline's second row, the same
- *    time twice on one card. The board is DEP/ARR now and the timeline keeps report, amber.
+ * 1. Report is not printed at all. It headed the board AND was the timeline's second row, the
+ *    same time twice on one card — and a crew member reads it in her airline's own app anyway.
+ *    Still stored, still drives the push alert, just not on this card.
  * 2. "Leave home" is gone. It was report minus a flat 55 minutes — no home, no distance, no
  *    traffic in that number.
  * 3. The layover panel stays up for the whole duty the layover feeds, including the morning a
@@ -45,7 +46,7 @@ async function addSector(
   await expectRosterCount(page, expectedTotal);
 }
 
-test("report is printed once, leave-home is gone, and the layover panel covers the landing day", async ({
+test("report and leave-home are off the card, and the layover panel covers the landing day", async ({
   page,
 }) => {
   test.slow(); // two manual entries plus computed-style and animation measurements
@@ -67,32 +68,24 @@ test("report is printed once, leave-home is gone, and the layover panel covers t
   const card = page.getByTestId("day-detail-card");
   await expect(card).toBeVisible();
 
-  // --- 1. The board is DEP/ARR, and report appears exactly once on the whole card. ---
+  // --- 1. The board is DEP/ARR, and report appears nowhere on the card. ---
   await expect(card).toContainText(/dep/i);
   await expect(card).toContainText(/arr/i);
-  // Counted over the board and the timeline only. The layover panel below them says "free until
-  // report" too, and that is a different sentence about a different thing — the duplication this
-  // removes was the same TIME printed twice, four lines apart.
+  // Counted over the board and the timeline only. The layover panel below them still says "free
+  // until report", which is a different sentence about a different thing: how much of the rest
+  // is hers. The duty's own report TIME is what is gone.
   expect(
     await card.evaluate((el) => {
       const copy = el.cloneNode(true) as HTMLElement;
       copy.querySelector('[data-testid="layover-brief"]')?.remove();
       return (copy.textContent?.match(/report/gi) ?? []).length;
     }),
-  ).toBe(1);
+  ).toBe(0);
 
-  // ...and it is still the loudest thing on the card. Measured against the row below it rather
-  // than against a hex string: what matters is that report does not read like an ordinary row.
+  // The origin's station line survived the deletion — it used to hang off the report row, and
+  // without it the card would name the departure station only as an IATA code in the headline.
   const timeline = page.getByTestId("duty-timeline");
-  const [reportColour, departsColour] = await timeline.evaluate((el) => {
-    const label = (text: string) =>
-      [...el.querySelectorAll("p")].find((p) => p.textContent?.trim() === text)!;
-    return [
-      getComputedStyle(label("Report")).color,
-      getComputedStyle(label("Departs")).color,
-    ];
-  });
-  expect(reportColour).not.toBe(departsColour);
+  await expect(timeline).toContainText("EZE");
 
   // --- 2. Leave home is gone, and so is the row it drew. ---
   await expect(card).not.toContainText(/leave home/i);
