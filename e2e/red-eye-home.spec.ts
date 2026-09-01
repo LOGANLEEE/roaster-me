@@ -86,9 +86,12 @@ test("a red-eye home ends the away run on the day it is flown, not on the mornin
   await pickCalendarDay(page, RETURN_DAY);
   const card = page.getByTestId("day-detail-card");
   await expect(card).toContainText("15 Jan");
-  await expect(card).toContainText("16 · 00:30");
+  await expect(card).toContainText("00:30");
+  // The date rides the Lands row now — the DEP/ARR board that used to carry it went on
+  // 2026-08-31, because every other row on it was the timeline's own words repeated.
+  await expect(card).toContainText(/Lands · \w{3} 16/);
 
-  // Nothing about the longer ARR row may push the page sideways at 390px.
+  // Nothing about the longer Lands row may push the page sideways at 390px.
   const overflow = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,

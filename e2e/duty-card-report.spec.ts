@@ -68,9 +68,14 @@ test("report and leave-home are off the card, and the layover panel covers the l
   const card = page.getByTestId("day-detail-card");
   await expect(card).toBeVisible();
 
-  // --- 1. The board is DEP/ARR, and report appears nowhere on the card. ---
-  await expect(card).toContainText(/dep/i);
-  await expect(card).toContainText(/arr/i);
+  // --- 1. No DEP/ARR board, and report appears nowhere on the card. ---
+  // The board went on 2026-08-31: with REPORT already off it, every row it had was the
+  // timeline's own words a few lines below — DEP above Departs, ARR above Lands, elapsed above
+  // "airborne". The landing date it alone carried moved onto the Lands row.
+  expect(await card.evaluate((el) => /\bDEP\b/.test(el.textContent ?? ""))).toBe(false);
+  expect(await card.evaluate((el) => /\bARR\b/.test(el.textContent ?? ""))).toBe(false);
+  await expect(card).toContainText("Departs");
+  await expect(card).toContainText("Lands");
   // Counted over the board and the timeline only. The layover panel below them still says "free
   // until report", which is a different sentence about a different thing: how much of the rest
   // is hers. The duty's own report TIME is what is gone.

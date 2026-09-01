@@ -207,6 +207,62 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
   });
   expect(onSky.muted, "muted text must use --color-ink-muted-on-sky").toBe("rgb(154, 163, 181)");
 
+  // --- Weather is drawn, and it falls. ---
+  // Two rejected shapes before this one: translating the hatched ::before (a uniform gradient
+  // slides as corduroy) and absolutely-positioned spans (a rectangle can only be a streak, and
+  // clear/cloud got nothing). It is an SVG now, so this asserts the drawing exists, that its
+  // marks each run their own loop, and — the part that actually matters — that the layer is
+  // masked out of the column the words live in.
+  const field = await card.evaluate((el) => {
+    const svg = el.querySelector("svg.wx-field");
+    const marks = svg ? [...svg.querySelectorAll(".wx-rain > path")] : [];
+    const styles = marks.map((m) => getComputedStyle(m));
+    const wrap = svg ? getComputedStyle(svg) : null;
+    return {
+      count: marks.length,
+      name: styles[0]?.animationName ?? "none",
+      iteration: styles[0]?.animationIterationCount ?? "",
+      distinctDurations: new Set(styles.map((s) => s.animationDuration)).size,
+      behindTheText: wrap?.zIndex ?? "",
+      masked: (wrap?.maskImage ?? wrap?.webkitMaskImage ?? "none") !== "none",
+    };
+  });
+  expect(field.count, "a storm is more rain, not a different texture").toBeGreaterThan(24);
+  // `wxf-`, not `wx-`. The glyph block in tokens.css owns `wx-fall` and `wx-drift` for its 24px
+  // icon, and a later @keyframes with the same name silently replaces an earlier one — every
+  // drop, flake and cloud on the card ran the glyph's 3px jiggle instead of falling, while the
+  // screenshot-hash check still read "4 distinct frames" and called it motion. Asserting the
+  // prefix is what stops that coming back.
+  expect(field.name).toBe("wxf-fall");
+  expect(field.name.startsWith("wxf-"), "card weather must not share the glyph's keyframe names").toBe(true);
+  expect(field.iteration).toBe("infinite");
+  expect(field.distinctDurations, "every streak falls at its own speed").toBeGreaterThan(5);
+  expect(field.behindTheText, "weather across a word is a smudge").toBe("-1");
+  // Load-bearing for contrast, not decoration. Near-white drops measured 1.35:1 against the
+  // on-sky ink where one crossed the headline; the mask keeps the art in the right third and
+  // takes that back to 6:1+. Remove it and the card fails its own legibility floor.
+  expect(field.masked, "the weather must be masked out of the reading column").toBe(true);
+
+  // --- A panel with its own background keeps its own text colours. ---
+  // The on-sky overrides are tuned for the dark field and cascade to every descendant, so the
+  // layover panel — `bg-card`, WHITE in light theme — was painting its text in near-white ink.
+  // Measured 2026-08-31: the free-time figure came out 1.19:1 there, against 16.86:1 on the
+  // same card with no sky. Dark theme never showed it, because there `--color-ink` and
+  // `--color-ink-on-sky` are the same colour, which is how it survived since skies shipped.
+  await page.emulateMedia({ colorScheme: "light" });
+  const inPanel = await page.getByTestId("layover-free").evaluate((el) => {
+    let bg = "rgba(0, 0, 0, 0)";
+    let node: HTMLElement | null = el;
+    while (node && (bg === "rgba(0, 0, 0, 0)" || bg === "transparent")) {
+      bg = getComputedStyle(node).backgroundColor;
+      node = node.parentElement;
+    }
+    return { fg: getComputedStyle(el).color, bg };
+  });
+  expect(inPanel.bg, "the panel is opaque white in light theme").toBe("rgb(255, 255, 255)");
+  expect(inPanel.fg, "so its text must be the ordinary ink, not the on-sky ink").toBe("rgb(27, 29, 34)");
+  await page.emulateMedia({ colorScheme: null });
+
   // --- The weather mark moves, so it can be spotted rather than read past. ---
   const glyph = card.locator("svg[data-wx]");
   await expect(glyph).toHaveAttribute("data-wx", "storm");

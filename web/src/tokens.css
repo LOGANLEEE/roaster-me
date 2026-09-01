@@ -257,6 +257,56 @@ body {
   }
 }
 
+/* Duty status — the answer block at the top of a day card (DutyStatus.tsx).
+ *
+ * `ds-`, and the prefix is load-bearing. `@keyframes` names are ONE FLAT GLOBAL NAMESPACE and a
+ * later definition silently replaces an earlier one: `wx-*` (the 24px WeatherGlyph) and `wxf-*`
+ * (the card's weather field) already collided here once, and every drop, flake and cloud on the
+ * card ran the glyph's 3px jiggle for a day of work before anyone noticed. Checked before
+ * writing this: 0 hits for `ds-` across web/src.
+ *
+ * Everything below animates `opacity` and `transform` ONLY. The progress rail in particular
+ * scales on the X axis rather than growing its `width`, because width is layout and this runs
+ * on every card mount.
+ *
+ * The rail's resting transform lives OUTSIDE the no-preference query, so under reduced motion
+ * the bar is drawn at its true fraction with no animation at all — never at zero. */
+.ds-bar > i {
+  transform: scaleX(var(--ds-p, 0));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ds-hero {
+    opacity: 0;
+    animation: ds-rise var(--duration-enter) var(--ease-snap) forwards;
+  }
+
+  .ds-bar > i {
+    animation: ds-fill 760ms var(--ease-snap) forwards;
+  }
+}
+
+@keyframes ds-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fills to the element's OWN `--ds-p`, so one keyframe serves every fraction. */
+@keyframes ds-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(var(--ds-p, 0));
+  }
+}
+
 /* Weather skies — the destination forecast as the card's own surface.
  *
  * DARK IN BOTH THEMES, same licence the departure-board panel already takes. Not a style
@@ -274,6 +324,10 @@ body {
 .sky {
   background-image: var(--sky-field);
   background-repeat: no-repeat;
+  /* Its own stacking context, so the falling marks can sit at z-index -1: above this card's
+     background, below every word on it. Without it a negative z-index escapes behind the card
+     entirely and the weather is invisible. */
+  isolation: isolate;
 }
 
 .sky[data-sky="storm"] {
@@ -295,8 +349,14 @@ body {
 }
 
 /* Falling weather, as raking hairlines rather than an icon — it reads as texture at a glance
- * and costs no layout. Static on purpose: CLAUDE.md allows transform/opacity animation only,
- * and a moving full-card background is a repaint every frame. */
+ * and costs no layout.
+ *
+ * It used to be static, with the note "a moving full-card background is a repaint every frame".
+ * That was right about the mechanism and wrong about the options: the ban is on animating the
+ * BACKGROUND. This is one composited pseudo-element, and translating it is a transform — the
+ * same thing the calendar's month track and the weather glyph already do. The field gradients
+ * underneath never move, so nothing repaints. The motion lives in the reduced-motion block
+ * further down; everything here is what both settings see. */
 .sky[data-sky="rain"]::before,
 .sky[data-sky="storm"]::before,
 .sky[data-sky="snow"]::before {
@@ -319,6 +379,192 @@ body {
   opacity: 0.14;
 }
 
+/* Weather art (WeatherField.tsx) — one SVG per card, drawn rather than assembled from divs.
+ *
+ * transform and opacity only, on groups. No SVG filters anywhere: a filtered layer
+ * re-rasterises every time it is transformed, and this runs on a phone. Soft edges come from
+ * radial gradients instead.
+ *
+ * Reduced motion splits by kind, on purpose:
+ *   clear / cloud — the art STAYS, standing still. A sun that does not turn is still a sun.
+ *   rain / storm / snow — hidden outright. Frozen raindrops read as broken, and the static
+ *                         hatch underneath already carries "it is raining there".
+ */
+.wx-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  /* Behind the text, in front of the field. Weather across a word is a smudge — and the layover
+     panel carries its own opaque background, which marks drawn on top would sit on. */
+  z-index: -1;
+
+  /* ...and faded out of the column the words live in.
+   *
+   * z-index alone is not enough for CONTRAST. Measured on a storm card at 390px, sampling the
+   * lightest pixel behind the headline across six frames: near-white drops gave 1.35:1 against
+   * the on-sky ink, and dimming them until they passed took the colour to rgb(120,134,158) at
+   * 26-48% — 3.30:1, still short, and by then barely weather at all.
+   *
+   * So the layer is masked instead. Text sits in the left two thirds of every card; the weather
+   * lives in the right third and the top, where nothing is written, and fades to nothing across
+   * the reading column. That buys the whole contrast budget back without dimming anything.
+   *
+   * The angle matches the rain's own 16deg slant, so the fade reads as part of the weather
+   * rather than as a rectangle someone cut out. */
+  -webkit-mask-image: linear-gradient(106deg, transparent 0%, transparent 40%, rgba(0, 0, 0, 0.5) 68%, #000 100%);
+  mask-image: linear-gradient(106deg, transparent 0%, transparent 40%, rgba(0, 0, 0, 0.5) 68%, #000 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-field-rain,
+  .wx-field-storm,
+  .wx-field-snow {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Depth is SPEED. Every kind below has a near layer and a far layer, and the far one is both
+     slower and fainter — that is what stops a field of marks reading as one moving sheet. */
+  .wx-rain > path,
+  .wx-snow .wx-flake-fall {
+    animation-name: wxf-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: transform;
+  }
+  .wx-snow .wx-flake-sway {
+    animation-name: wxf-sway;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+
+  .wx-sun-rays {
+    animation: wxf-turn 60s linear infinite;
+  }
+  .wx-sun {
+    animation: wxf-breathe 9s ease-in-out infinite;
+  }
+
+  .wx-cloud-back {
+    animation: wxf-drift 78s linear infinite;
+  }
+  .wx-cloud-front {
+    animation: wxf-drift 44s linear infinite;
+    animation-delay: -22s;
+  }
+
+  .wx-storm-strike {
+    animation: wxf-strike 6s steps(1, end) infinite;
+  }
+}
+
+/* The sun is placed by a `transform` ATTRIBUTE in the markup, so nothing here may animate
+   `transform` on it — the breathe is opacity, and the rays use the independent `rotate`
+   property, which composes with that attribute instead of replacing it. */
+.wx-sun-rays {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* NAMES ARE PREFIXED `wxf-`, and that is not style.
+ *
+ * The first version called these `wx-fall`, `wx-drift` and so on — the same names the weather
+ * GLYPH block further down this file already uses for its 24px icon. A later `@keyframes` with
+ * the same name silently replaces an earlier one, so every drop, flake and cloud on the card
+ * was running the glyph's animation: a 3px jiggle with an opacity fade. Measured on a snow
+ * card, all 34 flakes sat within 6px of the top with translateY between -2.2px and +2.7px,
+ * while their delays and durations were correctly spread.
+ *
+ * It also fooled the check that was supposed to catch it: four screenshots 150ms apart hashed
+ * to four distinct frames, which I read as "it falls". A 3px jiggle changes pixels too.
+ *
+ * Straight down, and nothing else — WHERE a mark falls is its own `d`/`cx` in the markup.
+ *
+ * It was a `var(--wx-x)` inside this keyframe at first, and the X component silently resolved to
+ * zero: every drop stacked in one column at the left edge, measured as 22 paths all at x=1. The
+ * custom property was set and readable on the element; it just did not survive substitution
+ * here. Geometry does not have that problem. */
+@keyframes wxf-fall {
+  from {
+    transform: translateY(-40px);
+  }
+  to {
+    transform: translateY(300px);
+  }
+}
+
+/* Snow only, on a nested group: one element cannot run two transform animations, and a flake
+   needs to fall and drift at different rates. */
+@keyframes wxf-sway {
+  from {
+    transform: translateX(-13px);
+  }
+  to {
+    transform: translateX(13px);
+  }
+}
+
+@keyframes wxf-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* Light, not motion: the sun brightens and settles rather than moving. */
+@keyframes wxf-breathe {
+  0%,
+  100% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes wxf-drift {
+  from {
+    transform: translateX(-420px);
+  }
+  to {
+    transform: translateX(420px);
+  }
+}
+
+/* Two flashes close together, then nothing for the rest of six seconds. `steps(1, end)` keeps
+   each one a snap — lightning does not ease — and the double beat is what separates it from a
+   light that merely blinks.
+
+   The first strike lands at 9% (0.54s), NOT at 0. It used to fire 0.098s in, which is during
+   the card's own mount and first paint: the animation had already happened by the time there
+   was anything to look at, and the next one was seven seconds away. Half a second is late
+   enough to be seen and early enough to still be "when the card opened". */
+@keyframes wxf-strike {
+  0%,
+  8.9% {
+    opacity: 0;
+  }
+  9% {
+    opacity: 1;
+  }
+  10.6% {
+    opacity: 0;
+  }
+  12.4% {
+    opacity: 0.75;
+  }
+  13.8% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Text inside a sky. Scoped overrides beat threading an "on sky?" prop through every element
  * of the card, and they are the whole reason the tokens above exist — see
  * lib/contrast.test.ts for the measurements that set them. */
@@ -329,6 +575,21 @@ body {
    reversed; the rule costs one line and putting the token back would cost a contrast re-check. */
 .sky .text-report { color: var(--color-report-on-sky); }
 .sky .border-edge { border-color: rgba(255, 255, 255, 0.14); }
+
+/* ...but not inside a panel that brought its own opaque background.
+ *
+ * The overrides above are tuned for the dark sky field and cascade to every descendant. The
+ * layover panel is `bg-card` — white in light theme — so its text was being painted in the
+ * near-white on-sky ink. Measured 2026-08-31 on a rain card at 390px: the free-time figure
+ * (`23h 59m`) came out 1.19:1 against the panel, against 16.86:1 on the same card with no sky.
+ * Dark theme never showed it, because there `--color-ink` and `--color-ink-on-sky` are the same
+ * colour — 13.65:1 either way, which is why this survived since the sky shipped.
+ *
+ * Scoped to `.bg-card`, not to the panel's test id: the rule is "a surface with its own
+ * background gets its own text colours", and any future panel inside a sky needs it too. */
+.sky .bg-card .text-ink { color: var(--color-ink); }
+.sky .bg-card .text-ink-muted { color: var(--color-ink-muted); }
+.sky .bg-card .border-edge { border-color: var(--color-edge); }
 .sky .divide-edge > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255, 255, 255, 0.14); }
 
 /* Weather glyph motion (WeatherGlyph.tsx).

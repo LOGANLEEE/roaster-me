@@ -8,6 +8,248 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-09-01 (the card answers first, and `operating` means what the renderer says it means)
+
+### The read-only preview card is gone, and so is the empty state that echoed it
+
+`next-duty-card` was the only surface on the calendar tab that could not be edited or deleted — a
+read-only echo of a day, stacked under the pairing strip while no day card showed at all. It is
+deleted. Today is now the card's default day, so a day card always renders, and the one thing the
+preview uniquely answered ("when do I fly next") is answered by the empty-day card's own
+`next-duty-line`, carrying the whole route chain rather than the first sector.
+
+The "No trips yet — add your first" panel went with it. Its button did exactly one thing,
+`setSelectedIso(today)`, and today's card — with the flight-number box already on it — is what
+renders there now. The panel asked for a tap to reach a screen that was already underneath it.
+Three e2e specs used its text as a "signed in, empty roster" marker and were retargeted at the day
+card.
+
+### Today is a DERIVED default, never written into state by an effect
+
+The first version selected today in a `useEffect` once the roster landed. That loses taps. React
+flushes passive effects *after* the commit that paints the grid, so a tap landing in that gap is
+overwritten by today — measured with probes, which logged `pick 2026-08-20` and then
+`effect-sets-today`, in that order, and the add went onto the wrong card.
+
+`const shownIso = selectedIso ?? localDateKey(now.toISOString(), homeTz)` cannot race a tap: once
+`selectedIso` is set, it wins. Restoring the effect fails **19 of 43** CalendarHome tests,
+deterministic across five runs — so the derivation is guarded, not merely tidier.
+
+Switching to a crew member's roster still drops the selected day (it belongs to the roster being
+left) but now falls back to today rather than to nothing. There is no screen in the app without a
+day card.
+
+### `operating = 0` means she is NOT ON THAT AEROPLANE — and I asserted the opposite first
+
+Recorded because the wrong version was confident and briefly acted on. A leg with `operating = 0`
+is the aircraft's own routing, before she boards or after she gets off. Three sources, none of
+which is the field's name:
+
+- `web/src/api.ts:18` — continuation is "the legs it flies on **after she gets off**"
+- `web/src/TripLegsPanel.tsx:56-64` — renders them as "Aircraft arrives before you board" /
+  "Aircraft continues without you"
+- `web/src/useTripEntry.ts:389-396` — `operating` is the contiguous range between
+  `boardingLegIndex` and `finalLegIndex`
+
+So **`layoverRests` is correct.** Its `inbound.dest !== outbound.origin` guard fires exactly when
+the roster does not record how she got between two stations, which is what its comment says. Do
+not "fix" it. The earlier claim that it hid a layover night came from reading the field name and
+the worker's partition and never opening the component that renders the value — two reads sharing
+one lineage is not confirmation.
+
+What IS wrong is data: the 24–27 Sept rows are mutually impossible (24th leaves her at SEZ, 25th
+boards her at TNR, with nothing carrying her there). Unresolved — ask, do not assume.
+
+### The card's headline is different for the two people who read it
+
+Measured over her real September roster, not asserted: she is home **61.9%** of the month,
+down-route 25.6%, airborne 12.5%; there are six away runs of 2–4 days. And the number that decided
+the design — **5 of 16 duties cross a home-local date boundary, and all five are the flight home**
+(EK192, EK66, EK353, EK409, EK708).
+
+So the day a duty is filed under is *never* the day she walks in. A card that leads with the
+roster's own date answers the at-home reader's only question wrongly, every time. `DutyStatus.tsx`
+therefore makes the hero **different by reader**: hers is a DURATION ("15h 45m free", "3h to go"),
+his is a DATE AND TIME spelled with its weekday ("Mon 21 Sep · 13:00"). Never a "+1" to add.
+
+Rejected on the way: a sector strip printing flight number and both clocks above the timeline.
+`CalendarHome.test.tsx` counts that each time appears exactly once, and it caught the strip
+immediately — it was the DEP/ARR board of `829b673` coming straight back. The block now prints no
+clock the timeline owns, and a test asserts that.
+
+**Down-route needs a rest that spans TRIPS.** Her roster stores each sector as its own trip (EK408
+out and EK409 home are `isis-03e5ebf6` and `isis-cb5ed55d`), so a component handed one trip's legs
+can never observe the gap between two, and the most valuable card would never have rendered.
+`layoverRests` already walks every leg across every trip; its result is passed in rather than
+re-derived.
+
+### Motion: `ds-` prefix, `scaleX` never `width`
+
+Two animations, `opacity` and `transform` only. `.ds-hero` rises (420ms, `--ease-snap`);
+`.ds-bar > i` fills (760ms) by scaling on X, because width is layout and this card mounts on every
+day tap. The rail's resting `scaleX(var(--ds-p))` sits *outside* the reduced-motion query, so under
+reduced motion it draws at its true fraction rather than at zero.
+
+The `ds-` prefix was checked free (0 hits) before being written. `@keyframes` names are one flat
+global namespace, and `wx-*` vs `wxf-*` already collided here once at the cost of a day's work.
+Verified by reading `getComputedStyle` — `ds-fill 0.76s -> matrix(0.781819, ...)` — never by
+hashing screenshots, because a 3px twitch changes pixels too.
+
+---
+
+## 2026-09-01 (rain that reads as rain, and a helper that walked the wrong way)
+
+### The sliding texture was the wrong primitive, not the wrong tuning
+
+Yesterday's version translated the card's hatched `::before`. Rejected on sight — "에니메이션이
+개판이야, 이걸 누가 이해해" — and the objection is correct. A `repeating-linear-gradient` is
+uniform edge to edge, so moving it slides a corduroy pattern across the whole card. Nothing about
+that reads as weather. **No amount of speed or opacity tuning fixes it, because the shape is
+wrong.** Rain reads as SPARSE, separate streaks of different lengths falling at different speeds
+with gaps between them. That is a set of nodes, not a fill.
+
+`WeatherField.tsx` renders 18 marks for rain, 26 for storm, 20 for snow. Each gets its own
+offset, length, opacity and duration from a hash of its index — deterministic, because
+`Math.random()` would reshuffle the whole field on every re-render and this card re-renders
+whenever the day changes or a forecast lands.
+
+Two placement decisions that are not cosmetic:
+
+- **`z-index: -1`, behind every word.** Rain across text is a smudge, not weather — and the
+  layover panel carries its own opaque background, so marks drawn on top would sit ON it rather
+  than behind it.
+- **`isolation: isolate` on `.sky`.** Without a stacking context on the card, a negative
+  z-index escapes behind the card's own background and the weather is invisible.
+
+The static hatch stays exactly as it was. It is the texture-at-a-glance, it is what reduced-motion
+users keep, and `WeatherField` renders nothing at all under `reduce` — no frozen dashes left lying
+on the card.
+
+**A storm is not a different texture. It is more rain, faster** (26 marks at 0.42s against rain's
+18 at 0.68s).
+
+### `pickCalendarDay` walked away from a day that was already on screen
+
+`crew.spec` failed 3 runs out of 3, deterministically, the morning the date rolled over to
+2026-09-01. Not flake, and the trace said so: the debug dump ended on **September 2028** after 24
+month steps, looking for `2026-09-10`.
+
+The calendar renders a SKELETON whenever `trips` is null — which includes the moment a crew badge
+is tapped and someone else's roster starts loading. Probing a day cell then answers "not visible",
+because no month is drawn yet rather than because the day is elsewhere, and the loop fired a month
+step it did not need. From there the target is BEHIND the displayed month, and the loop only walks
+forward.
+
+**It had been passing on luck.** `EK412.pickedDate` was one month ahead of "today", so the
+spurious step landed on the target month by accident. The moment the date rolled over and the
+target became THIS month, the same step overshot it.
+
+Fixed by waiting for `calendar-grid` before probing. 3 out of 3 failing → 3 out of 3 passing, and
+the spec halved from 21s to 10.5s because it no longer walks two years.
+
+The general shape, worth keeping: **a probe that cannot distinguish "absent" from "not rendered
+yet" turns a loading state into navigation.** Wait for the container, then ask about its contents.
+
+---
+
+## 2026-08-31 (the weather falls)
+
+### The sky texture moves now — and "no background animation" never meant "no motion"
+
+The falling-weather layer carried a comment saying it was "static on purpose: CLAUDE.md allows
+transform/opacity animation only, and a moving full-card background is a repaint every frame."
+Right about the mechanism, wrong about the options. **The ban is on animating the background.**
+This is one absolutely-positioned pseudo-element; translating it is a transform, the same thing
+the calendar's month track and the weather glyph already do. The field gradients underneath never
+move, so nothing repaints.
+
+Rain, storm and snow fall. Cloud and clear do not, because they have no texture layer to move and
+giving them one would mean animating a gradient — which is the thing the rule actually forbids.
+
+**Both loops are picked so the pattern maps exactly onto itself**, which is what makes an infinite
+translation seamless instead of a jump every cycle:
+
+- rain/storm travel **32.65px** straight down. The 74deg gradient repeats every 9px along its own
+  axis `(sin74, -cos74) = (0.9613, -0.2756)`; a vertical drop of `d` moves the pattern `0.2756*d`
+  along that axis, so `d = 9 / 0.2756 = 32.65px` is exactly one period. The stripes are slanted,
+  so falling vertically still reads as slanted rain.
+- snow travels **14px**, one full cell of the 14px dot grid.
+
+Storm is rain at 0.62s against rain's 1.15s — same texture, harder.
+
+**The bleed is vertical only, and that is not a style choice.** The first version bled `-48px` on
+every side so the layer never ran out of texture, and measured **+41px on
+`document.scrollWidth` at 390px** — a horizontal scroll, which this project treats as an
+invariant. The card is `overflow: hidden` and clips it visually; an absolutely positioned box that
+starts outside its clipping ancestor still counts toward the document's scrollable width.
+`will-change` was ruled out as the cause by removing it and re-measuring: still +41px.
+
+Measured after the fix, per kind, at 390px: four screenshots of the card 150ms apart hash to
+**4 distinct frames** under `no-preference` and **1** under `reduce`, with the card box unchanged
+at 358×148 and no horizontal overflow in either.
+
+### A panel with its own background was wearing the sky's text colours
+
+Found while screenshotting the above, in light theme, which is not the theme this app is usually
+read in.
+
+`.sky .text-ink` cascades to every descendant. The layover panel is `bg-card` — **white** in
+light theme — so its text was being painted in the near-white on-sky ink. The free-time figure
+(`23h 59m`, the largest thing in the panel) measured **1.19:1**, against 16.86:1 on the same card
+with no sky.
+
+Dark theme never showed it: there `--color-ink` and `--color-ink-on-sky` are the same colour, so
+it reads 13.65:1 either way. That is why it survived from the day skies shipped.
+
+Fixed by scoping the overrides out of any descendant that brought its own background:
+`.sky .bg-card .text-ink` and friends. Keyed on `.bg-card`, not on the panel's test id — the rule
+is "a surface with its own background gets its own text colours", and the next panel inside a sky
+will need it too.
+
+---
+
+## 2026-08-31 (the board goes)
+
+### The DEP/ARR board was deleted — with REPORT gone, it was the timeline twice
+
+Reported as "dep, arr has duplication", and it was right. The board read
+
+    DEP                07:15
+    ARR                12:50
+                      8h 36m
+
+directly above a timeline reading `07:15 Departs / 8h 36m airborne` and `12:50 Lands`. Removing
+REPORT earlier the same day had left a board whose every remaining row was the words underneath
+it, four lines apart.
+
+**The one thing it said that the timeline did not: the landing DATE** on a sector that crosses a
+local day (`ARR Wed 12 · 16:20`). That moved onto the Lands row — `Lands · Wed 12` — and is
+measured **from the day the duty started, not from that leg's own departure**. EK448 leaves Dubai
+on the Tuesday and its second sector both leaves Singapore and lands in Auckland on the
+Wednesday: leg-relative that is a same-day sector and says nothing, while the fact someone waiting
+needs is that she is down on the Wednesday. Getting this wrong is what the first version did, and
+the existing red-eye test caught it.
+
+**The elapsed figure survives only on a multi-leg pairing** (`1d 2h total`), where it means the
+whole trip including ground time — something no per-leg airborne figure says. On a single sector
+it was the airborne figure again, to the minute, which is exactly the duplication being removed.
+
+### "free until report" stays, and it is not an inconsistency
+
+Asked, reasonably: report is off the card, so why does the layover panel still say
+`23h 59m free until report`?
+
+Because it is not printing a report time — it is naming what the number is counted TO. Landing to
+next report is the figure she plans a layover against, and it is the one thing a generic travel
+assistant cannot know; `MIN_LAYOVER_FREE_HOURS` and the whole transit-vs-layover split are built
+on it. Drop the word and `23h 59m free` no longer says free until when, which is the only reason
+the number is worth printing.
+
+`formatLayoverBrief`'s `REPORT` line stays for the same reason: that text is read by a model, not
+by her, and it is the roster context the assistant is being handed.
+
+---
+
 ## 2026-08-31 (calendar taps during the month slide)
 
 ### The e2e suite was not flaky. A click during the month slide is genuinely lost.

@@ -30,7 +30,7 @@ test.describe("layout invariants at phone width", () => {
 
     // --- The empty state: this is the no-upcoming-duty branch, the one that kept regressing.
     // It regressed precisely because it was the branch nobody screenshotted.
-    await expect(page.getByText(/no trips yet/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("day-detail-card")).toContainText(/no duty/i, { timeout: 15_000 });
     await expectCalendarMatchesContainer(page, "empty state");
     await expectNoHorizontalOverflow(page, "empty state");
 

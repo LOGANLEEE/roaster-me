@@ -39,8 +39,9 @@ test("calendar home -> inline add-trip form -> autofill add -> sequential add ->
   // that drove it swallowed every timeout, so a cleanup that quietly failed used to surface
   // as an unrelated assertion failing later.
   await clearRoster(page);
-  const emptyState = page.getByText(/no trips yet/i);
-  await expect(emptyState).toBeVisible();
+  // An empty roster shows today's own day card, not a "No trips yet" panel — that panel was
+  // deleted with the preview card, because its only action was to select today.
+  await expect(page.getByTestId("day-detail-card")).toContainText(/no duty/i);
 
   // --- Tap a day on the calendar home: single tap selects it and, since it's empty, its
   // detail card IS the add-trip form (openAddForm selects + waits for the form). ---
@@ -111,7 +112,7 @@ test("calendar home -> inline add-trip form -> autofill add -> sequential add ->
   // --- Delete both, and confirm the roster really is empty (not just the screen). ---
   await clearRoster(page);
   expect(await rosterTrips(page)).toHaveLength(0);
-  await expect(page.getByText(/no trips yet/i)).toBeVisible();
+  await expect(page.getByTestId("day-detail-card")).toContainText(/no duty/i);
 });
 
 test.beforeAll(() => {

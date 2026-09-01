@@ -280,7 +280,7 @@ describe("CalendarHome", () => {
     vi.mocked(getTrips).mockClear();
   });
 
-  it("renders the month calendar and a compact next-duty card", async () => {
+  it("renders the month calendar and the duty's day card", async () => {
     vi.mocked(getTrips).mockResolvedValue([aklTrip]);
 
     render(<CalendarHome now={now} />);
@@ -289,17 +289,26 @@ describe("CalendarHome", () => {
     expect(await screen.findByTestId("calendar-next")).toBeInTheDocument();
     expect(screen.getByText("Mon")).toBeInTheDocument();
 
-    // Next-duty card: FULL route chain (every stop, not just endpoints) + flight/trip-length
-    // muted line, then the departure-board rows (DEP/ARR) and the duration.
-    const card = screen.getByTestId("next-duty-card");
+    // The duty's own day card: FULL route chain (every stop, not just endpoints) +
+    // flight/trip-length muted line, then the timeline. The DEP/ARR board is gone — every row it
+    // had was the timeline's own words a few lines below it. Reached by picking the day, because
+    // "today" in this fixture is the 10th and the duty is on the 11th.
+    await userEvent.setup().click(await screen.findByTestId("calendar-day-2026-08-11"));
+    const card = await screen.findByTestId("day-detail-card");
     expect(card).toHaveTextContent("DXB → SIN → AKL");
     expect(card).toHaveTextContent("EK448 · Tue 11 Aug · 2 days");
     expect(card).toHaveTextContent("06:15"); // dep: firstLeg.depUtc in Asia/Dubai
     expect(card).toHaveTextContent("16:20"); // arr: lastLeg.arrUtc in Pacific/Auckland
+    // Each of those times is printed ONCE, by the timeline, not once there and once on a board.
+    expect(card.textContent?.match(/06:15/g) ?? []).toHaveLength(1);
+    expect(card.textContent?.match(/16:20/g) ?? []).toHaveLength(1);
     // The landing day is spelled out rather than left as a "+1" to add to a date in another
-    // country. Auckland is a calendar day ahead of the Dubai departure.
-    expect(card).toHaveTextContent("Wed 12 · 16:20");
-    expect(card).toHaveTextContent("1d 2h"); // elapsed time, kept from the old sector rail
+    // country — it moved onto the Lands row when the board went. Auckland is a calendar day
+    // ahead of the Dubai departure of that sector.
+    expect(card).toHaveTextContent("Lands · Wed 12");
+    // Elapsed time survives only because this is a multi-leg pairing, where it means the whole
+    // trip including ground time — something no per-leg airborne figure says.
+    expect(card).toHaveTextContent("1d 2h total");
     // The preview carries the timeline too. It used to stop at the board rows, which is what
     // "day 22 renders without details" was: the home screen showed a route and three times,
     // and everything else was one tap away with nothing on screen saying so.
@@ -313,6 +322,63 @@ describe("CalendarHome", () => {
     // anyway. It is still stored, still drives the push alert, just not shown here.
     expect(card).not.toHaveTextContent(/report/i);
     expect(card).not.toHaveTextContent("04:45"); // firstLeg.reportUtc in Asia/Dubai
+  });
+
+  it("keeps a duty on the card while she is on it, instead of jumping to the next one", async () => {
+    // Reported at 20:30, airborne at 22:00, lands at 23:10 — and the clock is 22:30, so she is
+    // in the air. The card used to pick "earliest duty whose REPORT is still ahead", which
+    // drops a duty the moment she reports for it: on 1 Sept the app opened on tomorrow's
+    // DXB → CPH while she was mid-flight on EK192. Not landed yet is the test, not not started.
+    vi.mocked(getTrips).mockResolvedValue([secondDutySameDay, aklTrip]);
+    vi.mocked(getAirport).mockResolvedValue(null);
+
+    render(<CalendarHome now={new Date("2026-08-10T22:30:00.000Z")} />);
+
+    const card = (await screen.findAllByTestId("day-detail-card"))[0]!;
+    expect(card).toHaveTextContent("DXB → BAH"); // the one she is on
+    expect(card).not.toHaveTextContent("AKL"); // not the next one, which reports tomorrow
+  });
+
+  it("opens on today's day card when today has a duty, with no tap needed", async () => {
+    // The first screen used to stack the pairing strip and a `next-duty-card` — a read-only
+    // echo of a day, and the only one of those surfaces that cannot be edited or deleted —
+    // while showing no day card at all. Selecting today gives the card a tap would have.
+    const todayDuty: TripWithFlights = {
+      ...secondDutySameDay,
+      id: "trip-today",
+      flights: [
+        {
+          ...secondDutySameDay.flights[0]!,
+          id: "f-today",
+          tripId: "trip-today",
+          depUtc: "2026-08-10T06:00:00.000Z", // 10:00 on 10 Aug in Asia/Dubai — today
+          arrUtc: "2026-08-10T07:10:00.000Z",
+          reportUtc: "2026-08-10T04:30:00.000Z",
+        },
+      ],
+    };
+    vi.mocked(getTrips).mockResolvedValue([todayDuty]);
+    vi.mocked(getAirport).mockResolvedValue(null);
+
+    render(<CalendarHome now={now} />);
+
+    await screen.findByTestId("day-detail-card");
+    expect(screen.queryByTestId("day-detail-card")).toBeInTheDocument();
+  });
+
+  it("names the next duty on a day that has none of its own", async () => {
+    // This is what let the read-only preview card go: "no duty" alone leaves the obvious
+    // question unanswered, so the empty day card answers it — with the whole route chain, not
+    // the first sector, because DXB → SIN → AKL is one duty.
+    vi.mocked(getTrips).mockResolvedValue([aklTrip]); // 11 Aug, and "today" is the 10th
+    vi.mocked(getAirport).mockResolvedValue(null);
+
+    render(<CalendarHome now={now} />);
+
+    const line = await screen.findByTestId("next-duty-line");
+    expect(line).toHaveTextContent("EK448");
+    expect(line).toHaveTextContent("DXB → SIN → AKL");
+    expect(screen.queryByTestId("next-duty-card")).not.toBeInTheDocument();
   });
 
   it("shows the calendar skeleton while trips are loading, then replaces it once they resolve", async () => {
@@ -344,18 +410,31 @@ describe("CalendarHome", () => {
     expect(day.className).toContain("bg-accent-soft");
   });
 
-  it("shows an empty state with an add-trip action that selects today and shows the inline add form", async () => {
+  it("opens an empty roster on today's card with the add form already on it, no tap needed", async () => {
+    // The "No trips yet — add your first" panel this replaces had one action,
+    // `setSelectedIso(today)` — it asked for a tap to reach the screen already underneath it.
+    vi.mocked(getTrips).mockResolvedValue([]);
+
+    render(<CalendarHome now={now} />);
+
+    // now = 2026-08-10, and nothing has been picked: the card is today's.
+    expect(await screen.findByTestId("day-detail-card")).toHaveTextContent("Mon 10 Aug — no duty");
+    expect(screen.getByTestId("flightno-input")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add your first/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps a day she taps, even when the roster lands in the same frame", async () => {
+    // The default is DERIVED (`selectedIso ?? today`), not written by an effect. An effect
+    // lost this tap: React flushes passive effects after the commit that paints the grid, so
+    // a tap in that gap was overwritten by today and her add went onto the wrong card.
     vi.mocked(getTrips).mockResolvedValue([]);
     const user = userEvent.setup();
 
     render(<CalendarHome now={now} />);
 
-    expect(await screen.findByText(/no trips yet/i)).toBeInTheDocument();
-    const addButton = screen.getByRole("button", { name: /add your first/i });
-    expect(addButton).toBeInTheDocument();
+    await user.click(await screen.findByTestId("calendar-day-2026-08-20"));
 
-    await user.click(addButton);
-    expect(await screen.findByTestId("flightno-input")).toBeInTheDocument();
+    expect(await screen.findByTestId("day-detail-card")).toHaveTextContent("Thu 20 Aug — no duty");
   });
 
   it("single tap on an empty calendar day selects it and shows a no-duty detail card with the inline add-trip form", async () => {
@@ -372,8 +451,8 @@ describe("CalendarHome", () => {
     expect(detail).toHaveTextContent(/no duty/i);
     // No "Add trip" button to press first - the flight-no input is right there, one tap in.
     expect(screen.getByTestId("flightno-input")).toBeInTheDocument();
-    // Selecting a day replaces the next-duty card.
-    expect(screen.queryByTestId("next-duty-card")).not.toBeInTheDocument();
+    // Selecting a day swaps the card over to it.
+    expect(screen.queryByTestId("day-detail-card")).toBeInTheDocument();
   });
 
   it("single tap on a trip day selects it and shows a trip detail card with an Edit trip button", async () => {
@@ -391,13 +470,13 @@ describe("CalendarHome", () => {
     expect(screen.getByTestId("day-detail-action")).toHaveAttribute("aria-label", "Edit trip");
   });
 
-  it("tapping the next-duty card selects that duty's day, showing its detail card in place", async () => {
+  it("tapping a duty's day on the grid shows its detail card in place", async () => {
     vi.mocked(getTrips).mockResolvedValue([aklTrip]);
     const user = userEvent.setup();
 
     render(<CalendarHome now={now} />);
 
-    await user.click(await screen.findByTestId("next-duty-card"));
+    await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
 
     const detail = await screen.findByTestId("day-detail-card");
     expect(detail).toHaveTextContent("EK448");
@@ -503,14 +582,14 @@ describe("CalendarHome", () => {
     const fullyFutureNow = new Date("2026-08-01T00:00:00.000Z");
     render(<CalendarHome now={fullyFutureNow} />);
 
-    await screen.findByTestId("next-duty-card");
+    await screen.findByTestId("next-duty-line");
     expect(screen.queryByTestId("pairing-progress-card")).not.toBeInTheDocument();
   });
 
   it("selects today when openTodayToken changes and today is trip-free, showing the inline add form", async () => {
     vi.mocked(getTrips).mockResolvedValue([aklTrip]);
     const { rerender } = render(<CalendarHome now={now} openTodayToken={0} />);
-    await screen.findByTestId("next-duty-card");
+    await screen.findByTestId("next-duty-line");
 
     rerender(<CalendarHome now={now} openTodayToken={1} />);
 
@@ -523,7 +602,7 @@ describe("CalendarHome", () => {
     vi.mocked(getTrips).mockResolvedValue([inProgressTrip]);
     // now falls on inProgressTrip's away span (2026-08-09..2026-08-12 Asia/Dubai).
     const { rerender } = render(<CalendarHome now={new Date("2026-08-10T10:00:00.000Z")} openTodayToken={0} />);
-    await screen.findByTestId("next-duty-card");
+    await screen.findAllByTestId("day-detail-card");
 
     rerender(<CalendarHome now={new Date("2026-08-10T10:00:00.000Z")} openTodayToken={1} />);
 
@@ -613,7 +692,8 @@ describe("CalendarHome", () => {
 
     await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
     await screen.findByTestId("day-detail-card");
-    await user.click(screen.getByTestId("day-detail-action"));
+    await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
+    await user.click(await screen.findByTestId("day-detail-action"));
 
     expect(await screen.findByTestId("card-edit-flightno")).toHaveValue("448");
   });
@@ -644,7 +724,8 @@ describe("CalendarHome", () => {
 
     await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
     await screen.findByTestId("day-detail-card");
-    await user.click(screen.getByTestId("day-detail-action"));
+    await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
+    await user.click(await screen.findByTestId("day-detail-action"));
 
     const input = await screen.findByTestId("card-edit-flightno");
     await user.clear(input);
@@ -674,7 +755,8 @@ describe("CalendarHome", () => {
 
     await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
     await screen.findByTestId("day-detail-card");
-    await user.click(screen.getByTestId("day-detail-action"));
+    await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
+    await user.click(await screen.findByTestId("day-detail-action"));
 
     const input = await screen.findByTestId("card-edit-flightno");
     await user.clear(input);
@@ -701,7 +783,8 @@ describe("CalendarHome", () => {
 
     await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
     await screen.findByTestId("day-detail-card");
-    await user.click(screen.getByTestId("day-detail-action"));
+    await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
+    await user.click(await screen.findByTestId("day-detail-action"));
     await screen.findByTestId("card-edit-flightno");
 
     await user.click(screen.getByTestId("card-edit-cancel"));
@@ -804,12 +887,12 @@ describe("CalendarHome", () => {
       expect(timeline).toHaveTextContent("11h 20m airborne"); // leg 0: 02:15Z -> 13:35Z
       expect(timeline).toHaveTextContent("Lands");
       expect(timeline).toHaveTextContent("21:35"); // leg 0 arrUtc in Asia/Singapore
-      // The summary board rows sit above the timeline, not swapped out for it — DEP/ARR only,
-      // and report appears nowhere on the card.
+      // No board above the timeline any more, and report appears nowhere on the card.
       const detail = screen.getByTestId("day-detail-card");
-      expect(detail).toHaveTextContent(/dep/i);
-      expect(detail).toHaveTextContent(/arr/i);
       expect(detail).not.toHaveTextContent(/report/i);
+      // "DEP"/"ARR" as standalone board labels are gone; "Departs"/"Lands" are the timeline's.
+      expect(detail.textContent).not.toMatch(/\bDEP\b/);
+      expect(detail.textContent).not.toMatch(/\bARR\b/);
     });
 
     it("remounts the timeline when another day of the SAME trip is picked, so the stagger replays", async () => {
@@ -851,7 +934,9 @@ describe("CalendarHome", () => {
       expect(timeline).not.toHaveTextContent("Layover · SIN");
       expect(timeline).toHaveTextContent("2h");
       expect(screen.getAllByText("Departs")).toHaveLength(2);
-      expect(screen.getAllByText("Lands")).toHaveLength(2);
+      // One of the two carries the landing date ("Lands · Wed 12"): this pairing leaves Dubai on
+      // the Tuesday and is down in Auckland on the Wednesday.
+      expect(screen.getAllByText(/^Lands( · .+)?$/)).toHaveLength(2);
     });
 
     it("keys the grid to HOME BASE, not to wherever the next duty happens to depart", async () => {
@@ -933,7 +1018,7 @@ describe("CalendarHome", () => {
 
       render(<CalendarHome now={now} />);
 
-      expect(await screen.findByTestId("next-duty-card")).toBeInTheDocument();
+      expect(await screen.findByTestId("next-duty-line")).toBeInTheDocument();
       expect(screen.queryByTestId("crew-badges")).not.toBeInTheDocument();
     });
 
@@ -949,7 +1034,7 @@ describe("CalendarHome", () => {
 
       expect(getCrewTrips).toHaveBeenCalledWith("u-fo");
       // Their duty, not yours: the fixture's SYD leg, and none of your own AKL trip.
-      const card = await screen.findByTestId("next-duty-card");
+      const card = await screen.findByTestId("next-duty-line");
       expect(card).toHaveTextContent("SYD → NRT");
       expect(card).not.toHaveTextContent("AKL");
       expect(screen.getByTestId("crew-badge-u-fo")).toHaveAttribute("aria-pressed", "true");
@@ -958,7 +1043,7 @@ describe("CalendarHome", () => {
       await user.click(screen.getByTestId("crew-badge-self"));
 
       expect(getTrips).toHaveBeenCalled();
-      expect(await screen.findByTestId("next-duty-card")).toHaveTextContent("DXB → SIN → AKL");
+      expect(await screen.findByTestId("next-duty-line")).toHaveTextContent("DXB → SIN → AKL");
     });
 
     it("offers no edit or delete on a crew member's trip day", async () => {
@@ -1003,12 +1088,13 @@ describe("CalendarHome", () => {
       render(<CalendarHome now={now} />);
       await user.click(await screen.findByTestId("crew-badge-u-fo"));
 
-      // No "add your first trip" CTA on someone else's empty roster.
-      expect(await screen.findByText(/nothing on this roster yet/i)).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /add your first trip/i })).not.toBeInTheDocument();
+      // Their empty roster opens on today's card like your own does — with no way to write to it.
+      expect(await screen.findByTestId("day-detail-card")).toHaveTextContent("Mon 10 Aug — no duty");
+      expect(screen.queryByTestId("flightno-input")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("add-duty-here")).not.toBeInTheDocument();
 
       await user.click(screen.getByTestId("calendar-day-2026-08-20"));
-      expect(await screen.findByTestId("day-detail-card")).toHaveTextContent(/no duty/i);
+      expect(await screen.findByTestId("day-detail-card")).toHaveTextContent("Thu 20 Aug — no duty");
       expect(screen.queryByTestId("flightno-input")).not.toBeInTheDocument();
     });
 
@@ -1022,12 +1108,12 @@ describe("CalendarHome", () => {
 
       render(<CalendarHome now={now} />);
       await user.click(await screen.findByTestId("crew-badge-u-fo"));
-      expect(await screen.findByTestId("next-duty-card")).toHaveTextContent("SYD → NRT");
+      expect(await screen.findByTestId("next-duty-line")).toHaveTextContent("SYD → NRT");
 
       // The mount's own-roster fetch finally answers — under their badge. It must be dropped.
       resolveOwn([aklTrip]);
       await waitFor(() => expect(screen.getByTestId("crew-badge-u-fo")).toHaveAttribute("aria-pressed", "true"));
-      expect(screen.getByTestId("next-duty-card")).toHaveTextContent("SYD → NRT");
+      expect(screen.getByTestId("next-duty-line")).toHaveTextContent("SYD → NRT");
     });
 
     it("falls back to your own roster when a pairing is revoked while you're reading it", async () => {
@@ -1043,7 +1129,7 @@ describe("CalendarHome", () => {
       await user.click(await screen.findByTestId("crew-badge-u-fo"));
 
       // Not stuck on the skeleton: your own roster is back, and the stale badge is gone.
-      expect(await screen.findByTestId("next-duty-card")).toHaveTextContent("DXB → SIN → AKL");
+      expect(await screen.findByTestId("next-duty-line")).toHaveTextContent("DXB → SIN → AKL");
       await waitFor(() => expect(screen.queryByTestId("crew-badges")).not.toBeInTheDocument());
     });
 
@@ -1055,16 +1141,19 @@ describe("CalendarHome", () => {
 
       const { rerender } = render(<CalendarHome now={now} openTodayToken={0} />);
       await user.click(await screen.findByTestId("crew-badge-u-fo"));
-      expect(await screen.findByTestId("next-duty-card")).toHaveTextContent("SYD → NRT");
+      expect(await screen.findByTestId("next-duty-line")).toHaveTextContent("SYD → NRT");
 
       // + means "add a trip", which only exists on your own roster.
       rerender(<CalendarHome now={now} openTodayToken={1} />);
 
       await waitFor(() => expect(screen.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "true"));
-      expect(await screen.findByTestId("next-duty-card")).toHaveTextContent("DXB → SIN → AKL");
+      expect(await screen.findByTestId("next-duty-line")).toHaveTextContent("DXB → SIN → AKL");
     });
 
-    it("drops the selected day when switching rosters, so nobody's day carries over", async () => {
+    it("drops the day she was reading when switching rosters, landing on today instead", async () => {
+      // The day belongs to the roster being left: keeping 11 Aug would open THEIR 11 Aug, a day
+      // she never asked for. It falls back to today rather than to nothing, so their roster
+      // opens the same way her own does — the app has no screen without a day card.
       const user = userEvent.setup();
       vi.mocked(getCrew).mockResolvedValue({ members: [crewMember], sent: [], received: [] });
       vi.mocked(getTrips).mockResolvedValue([aklTrip]);
@@ -1072,11 +1161,15 @@ describe("CalendarHome", () => {
 
       render(<CalendarHome now={now} />);
       await user.click(await screen.findByTestId("calendar-day-2026-08-11"));
-      expect(await screen.findByTestId("day-detail-card")).toBeInTheDocument();
+      expect(await screen.findByTestId("day-detail-card")).toHaveTextContent("DXB → SIN → AKL");
 
       await user.click(screen.getByTestId("crew-badge-u-fo"));
 
-      await waitFor(() => expect(screen.queryByTestId("day-detail-card")).not.toBeInTheDocument());
+      // now = 2026-08-10, and neither roster has a duty on it.
+      await waitFor(() =>
+        expect(screen.getByTestId("day-detail-card")).toHaveTextContent("Mon 10 Aug — no duty"),
+      );
+      expect(screen.getByTestId("day-detail-card")).not.toHaveTextContent("AKL");
     });
   });
 });
