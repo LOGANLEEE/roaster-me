@@ -16,6 +16,7 @@ import type { CrewMember } from "@danyeowa/shared";
 import AddTripForm from "./AddTripForm";
 import CrewBadges from "./CrewBadges";
 import { WeatherGlyph } from "./WeatherGlyph";
+import { WeatherField } from "./WeatherField";
 import { digitsOf, getAirlinePrefix } from "./lib/airlinePrefix";
 import { useAirport } from "./lib/airports";
 import { CopyLayoverBrief } from "./CopyLayoverBrief";
@@ -481,6 +482,7 @@ function DayDetailCard({
         sky ? "sky" : "bg-card",
       ].join(" ")}
     >
+      {sky && <WeatherField kind={sky.kind} />}
       <TripSummaryLines
         sky={sky}
         legs={legs}

@@ -274,6 +274,10 @@ body {
 .sky {
   background-image: var(--sky-field);
   background-repeat: no-repeat;
+  /* Its own stacking context, so the falling marks can sit at z-index -1: above this card's
+     background, below every word on it. Without it a negative z-index escapes behind the card
+     entirely and the weather is invisible. */
+  isolation: isolate;
 }
 
 .sky[data-sky="storm"] {
@@ -325,56 +329,75 @@ body {
   opacity: 0.14;
 }
 
-/* ...and now it falls.
+/* Falling weather, as discrete marks (WeatherField.tsx).
  *
- * Straight down, and both loops are chosen so the pattern maps exactly onto itself — that is
- * what makes an infinite translation seamless instead of a jump every cycle:
+ * The first attempt translated the hatched ::before above instead, and it was rejected on
+ * sight. The reason is the primitive, not the tuning: a repeating-linear-gradient is uniform
+ * edge to edge, so moving it slides a corduroy pattern across the whole card. Rain reads as
+ * sparse separate streaks at different speeds with gaps between them, which is a set of nodes,
+ * not a fill.
  *
- *   rain/storm — 32.65px. The 74deg gradient repeats every 9px along its own axis
- *                (sin74, -cos74) = (0.9613, -0.2756); a vertical drop of d moves the pattern
- *                0.2756*d along that axis, so d = 9 / 0.2756 = 32.65px is exactly one period.
- *                The stripes are slanted, so falling vertically still reads as slanted rain.
- *   snow       — 14px, one full cell of the 14px dot grid.
+ * The hatch stays, static, as the texture-at-a-glance it always was. These fall over it.
  *
- * Colours, opacities and the field gradients are untouched, so lib/contrast.test.ts still
- * describes what is on screen. Nothing here can move a pixel of layout: the layer is absolute
- * inside a card that is already `relative` and `overflow-hidden`.
+ * Entirely inside no-preference: under reduced motion WeatherField renders nothing, so there
+ * are no frozen dashes left lying on the card — the hatch alone carries the weather, exactly
+ * as it did before any of this.
+ *
+ * transform and opacity only, on small nodes. The card's own field never moves.
  */
+.wx-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Behind the text, in front of the field. Rain across a word is not weather, it is a smudge —
+     and the layover panel below carries its own opaque background, which marks drawn on top of
+     would sit on rather than behind. */
+  z-index: -1;
+  /* So the fall distance below can be `100cqh` — the CARD's height. A percentage inside
+     `translate3d` would resolve against the 22px mark instead, which is not the distance. */
+  container-type: size;
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  /* Extra texture ABOVE the card, so the layer never runs out of pattern as it falls. Only
-     above: a horizontal bleed measured +41px on `document.scrollWidth` at 390px even though the
-     card is `overflow: hidden`, which breaks the no-horizontal-scroll invariant. An absolutely
-     positioned box that starts outside its clipping ancestor still counts toward the document's
-     scrollable width; `will-change` was ruled out as the cause by removing it and re-measuring. */
-  .sky[data-sky="rain"]::before,
-  .sky[data-sky="storm"]::before {
-    top: -34px;
+  .wx-field > span {
+    position: absolute;
+    top: 0;
+    display: block;
     will-change: transform;
+    animation-name: wx-drop;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
   }
-  .sky[data-sky="snow"]::before {
-    top: -16px;
-    will-change: transform;
+
+  /* A streak, not a line: transparent at both ends so it has no hard cap. Rotated to the same
+     16deg the hatch is drawn at, so the two read as one weather rather than two. */
+  .wx-field-rain > span,
+  .wx-field-storm > span {
+    width: 1px;
+    height: calc(22px * var(--wx-scale));
+    background: linear-gradient(180deg, rgba(232, 235, 241, 0) 0%, rgba(232, 235, 241, 0.95) 55%, rgba(232, 235, 241, 0) 100%);
+    rotate: 16deg;
   }
-  .sky[data-sky="rain"]::before {
-    animation: sky-fall-rain 1.15s linear infinite;
-  }
-  /* A storm is the same rain, harder. */
-  .sky[data-sky="storm"]::before {
-    animation: sky-fall-rain 0.62s linear infinite;
-  }
-  .sky[data-sky="snow"]::before {
-    animation: sky-fall-snow 3.4s linear infinite;
+
+  .wx-field-snow > span {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: rgba(232, 235, 241, 0.95);
   }
 }
 
-@keyframes sky-fall-rain {
-  to {
-    transform: translate3d(0, 32.65px, 0);
+/* From above the card to below it. The distance is a percentage of the CARD, not of the mark,
+   so one keyframe serves every size — and `top: 0` plus a negative start means a mark is
+   already on its way down when the card first paints, rather than the whole field entering
+   together from the top edge. */
+@keyframes wx-drop {
+  from {
+    transform: translate3d(0, -30px, 0);
   }
-}
-@keyframes sky-fall-snow {
   to {
-    transform: translate3d(0, 14px, 0);
+    transform: translate3d(var(--wx-drift), calc(100cqh + 30px), 0);
   }
 }
 

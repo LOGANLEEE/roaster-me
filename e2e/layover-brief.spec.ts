@@ -207,17 +207,29 @@ test("layover brief: free-until-report on the empty middle day, and the copy car
   });
   expect(onSky.muted, "muted text must use --color-ink-muted-on-sky").toBe("rgb(154, 163, 181)");
 
-  // --- The whole field falls, not just the glyph. ---
-  // The texture layer was static from the day skies shipped, on the reasoning that a moving
-  // background repaints every frame. It is a transform on one composited pseudo-element, which
-  // is the same thing the glyph and the calendar's month track already do — the gradients under
-  // it never move. Read off ::before, because that is the layer that carries it.
+  // --- Weather falls across the card, as separate marks. ---
+  // The first version translated the hatched ::before instead and was rejected on sight: a
+  // repeating gradient is uniform edge to edge, so moving it slides a corduroy pattern rather
+  // than raining. Rain is a set of sparse streaks at different speeds, which is nodes, not a
+  // fill — so this asserts there are several of them, each running its own loop.
   const field = await card.evaluate((el) => {
-    const cs = getComputedStyle(el, "::before");
-    return { name: cs.animationName, duration: cs.animationDuration, iteration: cs.animationIterationCount };
+    const wrap = el.querySelector(".wx-field");
+    const marks = wrap ? [...wrap.querySelectorAll("span")] : [];
+    const styles = marks.map((m) => getComputedStyle(m));
+    return {
+      count: marks.length,
+      name: styles[0]?.animationName ?? "none",
+      iteration: styles[0]?.animationIterationCount ?? "",
+      // Each mark has to differ, or it is one sheet of rain again rather than weather.
+      distinctDurations: new Set(styles.map((s) => s.animationDuration)).size,
+      behindTheText: styles[0] ? getComputedStyle(wrap!).zIndex : "",
+    };
   });
-  expect(field.name, "a storm field has to fall").toBe("sky-fall-rain");
+  expect(field.count, "a storm is more rain, not a different texture").toBeGreaterThan(20);
+  expect(field.name).toBe("wx-drop");
   expect(field.iteration).toBe("infinite");
+  expect(field.distinctDurations, "every streak falls at its own speed").toBeGreaterThan(5);
+  expect(field.behindTheText, "rain across a word is a smudge, not weather").toBe("-1");
 
   // --- A panel with its own background keeps its own text colours. ---
   // The on-sky overrides are tuned for the dark field and cascade to every descendant, so the

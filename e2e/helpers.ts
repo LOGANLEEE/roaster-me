@@ -97,6 +97,20 @@ async function waitForMonthSettled(page: Page): Promise<void> {
 }
 
 export async function pickCalendarDay(page: Page, iso: string): Promise<void> {
+  // Wait for the grid before probing a day in it.
+  //
+  // The calendar renders a SKELETON whenever `trips` is null, which includes the moment a crew
+  // badge is tapped and someone else's roster starts loading. Probing a day cell then answers
+  // "not visible" — not because the day is in another month, but because no month is drawn yet
+  // — and the loop below fires a month step it did not need. From that point the target is
+  // BEHIND the displayed month and this walks forward, so it can never arrive.
+  //
+  // Found 2026-09-01, deterministic, 3 runs out of 3. It had been passing purely because
+  // `EK412.pickedDate` was one month ahead of today, so the spurious step landed on the target
+  // by luck; the moment the date rolled over and the target became THIS month, the same step
+  // overshot it. The debug dump ended on "September 2028" after 24 of them.
+  await page.getByTestId("calendar-grid").waitFor();
+
   for (let i = 0; i < 24; i++) {
     const cell = page.getByTestId(`calendar-day-${iso}`);
     if (await cell.isVisible().catch(() => false)) {

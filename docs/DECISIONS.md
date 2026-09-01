@@ -8,6 +8,61 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-09-01 (rain that reads as rain, and a helper that walked the wrong way)
+
+### The sliding texture was the wrong primitive, not the wrong tuning
+
+Yesterday's version translated the card's hatched `::before`. Rejected on sight — "에니메이션이
+개판이야, 이걸 누가 이해해" — and the objection is correct. A `repeating-linear-gradient` is
+uniform edge to edge, so moving it slides a corduroy pattern across the whole card. Nothing about
+that reads as weather. **No amount of speed or opacity tuning fixes it, because the shape is
+wrong.** Rain reads as SPARSE, separate streaks of different lengths falling at different speeds
+with gaps between them. That is a set of nodes, not a fill.
+
+`WeatherField.tsx` renders 18 marks for rain, 26 for storm, 20 for snow. Each gets its own
+offset, length, opacity and duration from a hash of its index — deterministic, because
+`Math.random()` would reshuffle the whole field on every re-render and this card re-renders
+whenever the day changes or a forecast lands.
+
+Two placement decisions that are not cosmetic:
+
+- **`z-index: -1`, behind every word.** Rain across text is a smudge, not weather — and the
+  layover panel carries its own opaque background, so marks drawn on top would sit ON it rather
+  than behind it.
+- **`isolation: isolate` on `.sky`.** Without a stacking context on the card, a negative
+  z-index escapes behind the card's own background and the weather is invisible.
+
+The static hatch stays exactly as it was. It is the texture-at-a-glance, it is what reduced-motion
+users keep, and `WeatherField` renders nothing at all under `reduce` — no frozen dashes left lying
+on the card.
+
+**A storm is not a different texture. It is more rain, faster** (26 marks at 0.42s against rain's
+18 at 0.68s).
+
+### `pickCalendarDay` walked away from a day that was already on screen
+
+`crew.spec` failed 3 runs out of 3, deterministically, the morning the date rolled over to
+2026-09-01. Not flake, and the trace said so: the debug dump ended on **September 2028** after 24
+month steps, looking for `2026-09-10`.
+
+The calendar renders a SKELETON whenever `trips` is null — which includes the moment a crew badge
+is tapped and someone else's roster starts loading. Probing a day cell then answers "not visible",
+because no month is drawn yet rather than because the day is elsewhere, and the loop fired a month
+step it did not need. From there the target is BEHIND the displayed month, and the loop only walks
+forward.
+
+**It had been passing on luck.** `EK412.pickedDate` was one month ahead of "today", so the
+spurious step landed on the target month by accident. The moment the date rolled over and the
+target became THIS month, the same step overshot it.
+
+Fixed by waiting for `calendar-grid` before probing. 3 out of 3 failing → 3 out of 3 passing, and
+the spec halved from 21s to 10.5s because it no longer walks two years.
+
+The general shape, worth keeping: **a probe that cannot distinguish "absent" from "not rendered
+yet" turns a loading state into navigation.** Wait for the container, then ask about its contents.
+
+---
+
 ## 2026-08-31 (the weather falls)
 
 ### The sky texture moves now — and "no background animation" never meant "no motion"
