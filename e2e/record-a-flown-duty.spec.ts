@@ -45,7 +45,7 @@ test("a day already behind you can still be filled in", async ({ page }) => {
 
   // Tapping it opens the add form, exactly as a future empty day does.
   await page.getByTestId("flightno-input").fill(UNKNOWN_FLIGHT_NO.slice(2));
-  await expect(page.getByText(/unknown flight/i)).toBeVisible();
+  await expect(page.getByTestId("manual-fallback")).toBeVisible();
   await page.getByTestId("manual-expand").click();
   await page.getByLabel(/flight no/i).fill(UNKNOWN_FLIGHT_NO);
   await page.getByLabel(/^origin$/i).fill("DXB");

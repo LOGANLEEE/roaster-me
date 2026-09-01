@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { InvitePreview } from "@danyeowa/shared";
 import { authClient } from "./auth-client";
 import GoogleButton from "./GoogleButton";
+import LandingPitch from "./LandingPitch";
 
 type Props = {
   onSignedIn: () => void;
@@ -67,7 +68,10 @@ export default function Landing({
   }
 
   return (
-    <div className="entrance flex w-full max-w-sm flex-col items-center gap-6 text-center">
+    <div className="entrance flex w-full max-w-3xl flex-col items-center gap-6 text-center">
+      {/* The sign-in column keeps its old narrow measure; only the pitch below is allowed the
+          full width. A 3xl-wide email field would be its own bug. */}
+      <div className="flex w-full max-w-sm flex-col items-center gap-6">
       <h1 className="stagger-1 text-3xl font-semibold text-ink">danyeowa</h1>
 
       {invite ? (
@@ -104,20 +108,25 @@ export default function Landing({
               <dd>DXB → AKL</dd>
             </div>
             <div className="flex items-baseline justify-between border-b border-dashed border-white/15 py-1.5">
-              <dt className="text-white/50">REPORT</dt>
-              {/* Fixed amber, matching the dark theme's --color-report — same reason as the panel
-                itself: this must read as "report" regardless of the app's light/dark theme. */}
-              <dd className="text-[#ffd57e]">08:45</dd>
-            </div>
-            <div className="flex items-baseline justify-between border-b border-dashed border-white/15 py-1.5">
               <dt className="text-white/50">DEP</dt>
               <dd>10:45</dd>
             </div>
-            <div className="flex items-baseline justify-between py-1.5">
-              <dt className="text-white/50">ARR</dt>
+            <div className="flex items-baseline justify-between border-b border-dashed border-white/15 py-1.5">
+              <dt className="text-white/50">LANDS</dt>
               <dd>
                 06:20<sup>+1</sup>
               </dd>
+            </div>
+            {/* The row here used to read REPORT, and it was arguing with the copy underneath it:
+                report came off the day card in 829b673 because a crew member reads it in her
+                airline's own app, and the pitch below now says exactly that. The hero should
+                lead with what this app adds, which is the free window.
+
+                Fixed amber, matching the dark theme's --color-report, for the same reason the
+                panel itself is dark in both themes: this is the value the screen exists for. */}
+            <div className="flex items-baseline justify-between py-1.5">
+              <dt className="text-white/50">FREE</dt>
+              <dd className="text-[#ffd57e]">22h 35m</dd>
             </div>
           </dl>
         </div>
@@ -188,6 +197,11 @@ export default function Landing({
       </div>
 
       <GoogleButton callbackURL={callbackURL} onError={setError} />
+      </div>
+
+      {/* Only for a cold visitor. An invited guest arrived because a named person shared a
+          roster with them — answering that with a pricing table would be a worse page. */}
+      {!invite && <LandingPitch />}
     </div>
   );
 }

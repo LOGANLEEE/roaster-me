@@ -23,6 +23,35 @@ test.describe("layout invariants at phone width", () => {
   // the assertions don't depend on spec execution order.
   test.use({ viewport: { width: 390, height: 844 }, storageState: { cookies: [], origins: [] } });
 
+  test("the signed-out landing holds its width and its touch targets at 390px", async ({ page }) => {
+    // The marketing page is the widest thing in the app — a three-column pricing grid — and it
+    // is the first screen anyone ever sees. It collapses to one column below `sm`; this is the
+    // measurement that it actually does, rather than a screenshot that looks about right.
+    await page.goto("/");
+    await expect(page.getByTestId("landing-pitch")).toBeVisible();
+
+    for (const tier of ["solo", "shared", "crew"]) {
+      await expect(page.getByTestId(`tier-${tier}`)).toBeVisible();
+    }
+
+    await expectNoHorizontalOverflow(page, "landing");
+
+    // Every plan's call to action is a real touch target, not a text link. The manual-entry
+    // link on the add form was 20px tall for months for exactly this reason.
+    const ctas = page.getByTestId("landing-pricing").getByRole("link");
+    const count = await ctas.count();
+    expect(count).toBe(3);
+    for (let i = 0; i < count; i++) {
+      const box = await ctas.nth(i).boundingBox();
+      expect(box, `plan CTA ${i} has no box`).not.toBeNull();
+      expect(box!.height, `plan CTA ${i} is under 44px`).toBeGreaterThanOrEqual(44);
+    }
+
+    // The sign-in field is still the narrow column it was, not stretched to the pitch's width.
+    const email = await page.getByLabel(/email/i).boundingBox();
+    expect(email!.width).toBeLessThan(390);
+  });
+
   test("calendar matches its container width, nothing overflows, no control is under 16px", async ({
     page,
   }) => {
