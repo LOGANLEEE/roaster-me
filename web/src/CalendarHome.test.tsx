@@ -278,6 +278,16 @@ describe("CalendarHome", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.mocked(getTrips).mockClear();
+    // The viewed roster now persists to localStorage, which jsdom keeps for the whole FILE.
+    // Without this, a test that taps a crew badge leaves the next test mounting onto that
+    // crew member's roster — which showed up as `resolveOwn is not a function`, because the
+    // mount called getCrewTrips where the test had stubbed getTrips.
+    localStorage.clear();
+    // `mockResolvedValue` REPLACES the implementation for good, and `mockClear` does not undo
+    // it — so a crew test used to leave every later test with a crew member, and the suite only
+    // passed because of the order the tests happened to be written in. Restore the module
+    // mock's stated default ("no crew by default") after each one.
+    vi.mocked(getCrew).mockResolvedValue({ members: [], sent: [], received: [] });
   });
 
   it("renders the month calendar and the duty's day card", async () => {
@@ -1012,6 +1022,69 @@ describe("CalendarHome", () => {
       userId: "u-fo",
       flights: [{ ...citySampleTrip.flights[0]!, id: "crew-f1", tripId: "trip-crew", userId: "u-fo" }],
     };
+
+    it("reopens on the roster she was last reading, not on her own", async () => {
+      // The whole point of the crew feature is following someone else's month. Snapping back to
+      // her own calendar on every launch undoes that once per launch.
+      const user = userEvent.setup();
+      vi.mocked(getCrew).mockResolvedValue({ members: [crewMember], sent: [], received: [] });
+      vi.mocked(getTrips).mockResolvedValue([aklTrip]);
+      vi.mocked(getCrewTrips).mockResolvedValue([crewTrip]);
+
+      const first = render(<CalendarHome now={now} />);
+      await user.click(await screen.findByTestId("crew-badge-u-fo"));
+      await waitFor(() => expect(screen.getByTestId("crew-badge-u-fo")).toHaveAttribute("aria-pressed", "true"));
+      first.unmount();
+
+      // A fresh mount is what a reload is, as far as this component can tell.
+      vi.mocked(getCrewTrips).mockClear();
+      render(<CalendarHome now={now} />);
+
+      await waitFor(() => expect(screen.getByTestId("crew-badge-u-fo")).toHaveAttribute("aria-pressed", "true"));
+      expect(getCrewTrips).toHaveBeenCalledWith("u-fo");
+      expect(screen.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("does not restore a pairing that has since been revoked", async () => {
+      // She followed him, he unpaired, she reopens the app. The crew list no longer names him,
+      // and that is the quiet version of the 404 — her own roster is what should render.
+      const user = userEvent.setup();
+      vi.mocked(getCrew).mockResolvedValue({ members: [crewMember], sent: [], received: [] });
+      vi.mocked(getTrips).mockResolvedValue([aklTrip]);
+      vi.mocked(getCrewTrips).mockResolvedValue([crewTrip]);
+
+      const first = render(<CalendarHome now={now} />);
+      await user.click(await screen.findByTestId("crew-badge-u-fo"));
+      await waitFor(() => expect(screen.getByTestId("crew-badge-u-fo")).toHaveAttribute("aria-pressed", "true"));
+      first.unmount();
+
+      // The pairing is gone by the time she comes back.
+      vi.mocked(getCrew).mockResolvedValue({ members: [], sent: [], received: [] });
+      render(<CalendarHome now={now} />);
+
+      expect(await screen.findByTestId("next-duty-line")).toHaveTextContent("DXB → SIN → AKL");
+      await waitFor(() => expect(screen.queryByTestId("crew-badges")).not.toBeInTheDocument());
+    });
+
+    it("forgets the roster once she switches back to her own", async () => {
+      const user = userEvent.setup();
+      vi.mocked(getCrew).mockResolvedValue({ members: [crewMember], sent: [], received: [] });
+      vi.mocked(getTrips).mockResolvedValue([aklTrip]);
+      vi.mocked(getCrewTrips).mockResolvedValue([crewTrip]);
+
+      const first = render(<CalendarHome now={now} />);
+      await user.click(await screen.findByTestId("crew-badge-u-fo"));
+      await waitFor(() => expect(screen.getByTestId("crew-badge-u-fo")).toHaveAttribute("aria-pressed", "true"));
+      await user.click(screen.getByTestId("crew-badge-self"));
+      await waitFor(() => expect(screen.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "true"));
+      first.unmount();
+
+      vi.mocked(getCrewTrips).mockClear();
+      render(<CalendarHome now={now} />);
+
+      await waitFor(() => expect(screen.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "true"));
+      expect(getCrewTrips).not.toHaveBeenCalled();
+    });
 
     it("renders no badge row at all when you have no crew", async () => {
       vi.mocked(getTrips).mockResolvedValue([aklTrip]);
