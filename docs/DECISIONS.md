@@ -8,6 +8,53 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-09-02 (two flights in one day was never impossible, and a landing page that says so)
+
+### The crew member's own account, and what it cost
+
+Isis flew DXB → SEZ → TNR, typed EK707, and concluded the app could not take two flights in one
+day. So she recorded the first sector only, and split the way home across two separate days. Her
+24–27 Sept rows are not contradictory — they are INCOMPLETE, and the app was faithfully rendering
+what it had.
+
+Verified in code, not inferred. `AddTripForm.tsx:138` sets
+`preview = entry.autofillLegs && entry.autofillFlightNo ? … : null`, and every multi-sector
+control on the form is gated on `preview`:
+
+- `preview && preview.length > 1` → "Where do you get on?" / "Where do you get off?"
+- `preview && !entry.appendedFlightNo` → the "+ add flight" append control, which its own comment
+  restricts to schedule-known flights with no manual fallback
+
+EK707 and EK708 have **zero rows** in `flight_schedules` (25 rows total). So on that lookup every
+multi-sector affordance vanished at once, and what remained was one muted underlined link reading
+"enter manually" — 20px tall, under the 44px touch floor this project otherwise keeps. Behind it,
+the manual form has had an "Add leg" button all along.
+
+The capability existed. Nothing said so. Fixed by saying so, in the miss state itself, and by
+making the way in a real button.
+
+### The pricing page has no images, and that is not a shortcut
+
+Every screenshot of this app is a screenshot of somebody's real roster. The two things worth
+showing — a report time and a route — are text. A picture of text loads slower, cannot be
+translated, and reads as nothing to a screen reader. `LandingPitch.tsx` is text and tokens only.
+
+Not shown to a visitor arriving on an invite link. They came because a named person shared a
+roster with them; answering that with a pricing table replaces an answer with a pitch.
+
+Prices are placeholders and say so on the page. What the shape claims: a free tier genuinely
+usable alone, with payment attached to SHARING, because that is the part that costs a push
+subscription and a second person's reads.
+
+### The hero board was arguing with the copy underneath it
+
+The signed-out departure board led with `REPORT 08:45`. Report came off the day card in `829b673`
+precisely because a crew member reads it in her airline's own app — and the pitch now says that in
+so many words, two hundred pixels below. The board now shows `DEP / LANDS / FREE 22h 35m`: what
+this app adds rather than what it duplicates.
+
+---
+
 ## 2026-09-01 (the roster she was reading survives a reload)
 
 ### Whose calendar is on screen is now persisted, and restored optimistically

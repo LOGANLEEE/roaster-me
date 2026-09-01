@@ -325,17 +325,27 @@ export default function AddTripForm({
         )}
 
         {/* Manual entry is a miss-only fallback: the schedule provider is the source of truth,
-            so the link stays hidden until a lookup actually comes back empty. */}
+            so this stays hidden until a lookup actually comes back empty.
+            
+            It used to be one muted underlined link reading "enter manually", and it cost a real
+            pairing. A crew member flew DXB→SEZ→TNR, typed EK707, got no schedule, and concluded
+            the app could not take two flights in one day — so she recorded the first sector only
+            and split the way home across two days. Every multi-sector control on this form is
+            gated on a schedule `preview`, so on a miss the manual form is the ONLY route to a
+            second sector, and nothing said so. Now it does. */}
         {entry.lookupMiss && !entry.autofillLegs && !entry.resolving && (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm text-ink-muted">unknown flight — enter details</p>
+          <div data-testid="manual-fallback" className="flex flex-col gap-2">
+            <p className="text-sm text-ink-muted">No schedule for this flight — enter it yourself.</p>
+            <p data-testid="manual-multi-hint" className="text-sm text-ink-muted">
+              More than one sector that day? Add a leg for each.
+            </p>
             <button
               type="button"
               data-testid="manual-expand"
               onClick={entry.switchToManual}
-              className="w-fit text-sm text-ink-muted underline transition-colors duration-[120ms] hover:text-ink"
+              className="min-h-[44px] w-fit rounded border border-edge px-3 py-2 text-ink transition-colors duration-[120ms] hover:border-ink-muted"
             >
-              enter manually
+              Enter it manually
             </button>
           </div>
         )}
@@ -422,8 +432,11 @@ export default function AddTripForm({
         );
       })}
 
+      {/* The control the miss copy above promises. Carries a testid so that promise is
+          assertable rather than just written down. */}
       <button
         type="button"
+        data-testid="add-leg"
         onClick={entry.addLeg}
         className="min-h-[48px] rounded border border-edge px-3 py-2 text-ink transition-colors duration-[120ms] hover:border-ink-muted"
       >

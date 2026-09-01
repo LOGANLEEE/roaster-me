@@ -623,6 +623,35 @@ describe("AddTripForm", () => {
     expect(await screen.findByTestId("manual-expand")).toBeInTheDocument();
   });
 
+  it("a schedule miss offers a SECOND sector, reachable in one tap", async () => {
+    // The failure this exists for, verbatim from the crew member: she flew DXB→SEZ→TNR, typed
+    // EK707, got no schedule, and concluded the app could not take two flights in one day. She
+    // recorded the first sector only and split the way home across two days.
+    //
+    // Every multi-sector control on this form is gated on a schedule `preview` — both boarding
+    // pickers and "+ add flight" — so on a miss the manual form is the ONLY route to a second
+    // sector. This asserts the route is both signposted and one tap away.
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(lookupSchedule).mockResolvedValue(null);
+
+    render(<AddTripForm isoDate="2026-09-24" homeTz="Asia/Dubai" onSubmitted={vi.fn()} />);
+
+    await user.type(screen.getByTestId("flightno-input"), "707");
+    await vi.advanceTimersByTimeAsync(400);
+
+    // Signposted: the miss says a duty can hold more than one sector.
+    expect(await screen.findByTestId("manual-multi-hint")).toHaveTextContent(/add a leg for each/i);
+
+    // One tap in, and the control the hint promises is there.
+    await user.click(screen.getByTestId("manual-expand"));
+    const addLeg = await screen.findByTestId("add-leg");
+
+    // One sector to start with; adding one gives her the DXB→SEZ→TNR shape she needed.
+    expect(screen.getAllByLabelText(/^origin$/i)).toHaveLength(1);
+    await user.click(addLeg);
+    expect(screen.getAllByLabelText(/^origin$/i)).toHaveLength(2);
+  });
+
   it("falls back to the manual multi-leg fields on an unknown flight (404)", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     vi.mocked(lookupSchedule).mockResolvedValue(null);
@@ -638,7 +667,10 @@ describe("AddTripForm", () => {
     await user.type(screen.getByTestId("flightno-input"), "999");
     await vi.advanceTimersByTimeAsync(400);
 
-    expect(await screen.findByText(/unknown flight/i)).toBeInTheDocument();
+    expect(await screen.findByTestId("manual-fallback")).toBeInTheDocument();
+    // The line she needed and did not have: this form takes more than one sector. A crew
+    // member read "enter manually" and concluded two flights in one day were impossible.
+    expect(screen.getByTestId("manual-multi-hint")).toHaveTextContent(/add a leg for each/i);
     await user.click(screen.getByTestId("manual-expand"));
 
     const depInput = screen.getByLabelText(/departure/i) as HTMLInputElement;
@@ -688,7 +720,7 @@ describe("AddTripForm", () => {
 
     await user.type(screen.getByTestId("flightno-input"), "999");
     await vi.advanceTimersByTimeAsync(400);
-    await screen.findByText(/unknown flight/i);
+    await screen.findByTestId("manual-fallback");
     await user.click(screen.getByTestId("manual-expand"));
 
     // Flight-no field is already prefilled ("EK999") by switchToManual - no need to type it.
@@ -832,6 +864,7 @@ describe("AddTripForm", () => {
 
       expect(await screen.findByText(/unknown flight/i)).toBeInTheDocument();
       // No manual-entry form appeared - the outbound preview is untouched.
+      expect(screen.queryByTestId("manual-fallback")).not.toBeInTheDocument();
       expect(screen.getByTestId("autofill-card")).toBeInTheDocument();
       expect(screen.queryByTestId("manual-expand")).not.toBeInTheDocument();
     });

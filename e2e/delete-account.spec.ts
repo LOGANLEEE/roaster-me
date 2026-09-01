@@ -39,7 +39,7 @@ test("delete account: confirm by typing the address, and the roster goes with it
   const DAY = "2026-11-09";
   await openAddForm(page, DAY);
   await page.getByTestId("flightno-input").fill(UNKNOWN_FLIGHT_NO.slice(2));
-  await expect(page.getByText(/unknown flight/i)).toBeVisible();
+  await expect(page.getByTestId("manual-fallback")).toBeVisible();
   await page.getByTestId("manual-expand").click();
   await page.getByLabel(/flight no/i).fill(UNKNOWN_FLIGHT_NO);
   await page.getByLabel(/^origin$/i).fill("DXB");

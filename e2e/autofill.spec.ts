@@ -187,7 +187,7 @@ test("manual-entry fallback (sequential adds), then EK384 multi-leg smoke", asyn
   // needing to go back. ---
   await openAddForm(page, PICKED_DATE);
   await page.getByTestId("flightno-input").fill(UNKNOWN_FLIGHT_NO.slice(2));
-  await expect(page.getByText(/unknown flight/i)).toBeVisible();
+  await expect(page.getByTestId("manual-fallback")).toBeVisible();
   await expect(page.getByTestId("autofill-card")).not.toBeVisible();
 
   await page.getByTestId("manual-expand").click();
@@ -214,7 +214,7 @@ test("manual-entry fallback (sequential adds), then EK384 multi-leg smoke", asyn
   const nextIso = "2026-11-13";
   await openAddForm(page, nextIso);
   await page.getByTestId("flightno-input").fill(UNKNOWN_FLIGHT_NO.slice(2));
-  await expect(page.getByText(/unknown flight/i)).toBeVisible();
+  await expect(page.getByTestId("manual-fallback")).toBeVisible();
   await page.getByTestId("manual-expand").click();
   await expect(depInput).toHaveValue(`${nextIso}T00:00`);
   await page.getByLabel(/flight no/i).fill(UNKNOWN_FLIGHT_NO);
