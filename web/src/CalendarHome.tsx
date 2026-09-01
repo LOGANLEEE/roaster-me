@@ -17,6 +17,7 @@ import AddTripForm from "./AddTripForm";
 import CrewBadges from "./CrewBadges";
 import { WeatherGlyph } from "./WeatherGlyph";
 import { WeatherField } from "./WeatherField";
+import { DutyStatus } from "./DutyStatus";
 import { digitsOf, getAirlinePrefix } from "./lib/airlinePrefix";
 import { useAirport } from "./lib/airports";
 import { CopyLayoverBrief } from "./CopyLayoverBrief";
@@ -70,6 +71,10 @@ function DownRouteLine({
     </p>
   );
 }
+
+/** What a day with no duty of its own says about the next one. Prepared by CalendarHome, which
+ * is where "next" is decided, so the card never has to re-derive it. */
+type NextDutySummary = { isoDate: string; flightNo: string; route: string };
 
 type TimelineRow = {
   key: string;
@@ -232,9 +237,7 @@ function TripSummaryLines({
   sky?: Sky | null;
   /** Corner controls, rendered in the header row so they never steal width from the board. */
   actions?: React.ReactNode;
-  /** Appends the full duty timeline (TripTimeline) below the board rows — used by the
-   * day-detail card for a trip day. Omitted for the compact next-duty preview card, which
-   * stays board-only. */
+  /** Appends the full duty timeline (TripTimeline) below the board rows. */
   showTimeline?: boolean;
   /** Remounts the timeline when it changes, so the stagger plays again.
    *
@@ -242,7 +245,7 @@ function TripSummaryLines({
    * trip (same `trip.id`, so the same card, so the same rows) on every day it spans. Tapping
    * 1 Sept then 2 Sept therefore replayed nothing at all: React kept the DOM nodes and only
    * the layover panel below them changed. Passing the day here gives each day its own rows.
-   * Undefined on the next-duty preview card, which mounts once and has no day to key on. */
+   * Undefined where a card has no day to key on. */
   timelineKey?: string;
 }) {
   const firstLeg = legs[0]!;
@@ -315,16 +318,17 @@ function TripSummaryLines({
   );
 }
 
-/** The card shown below the calendar grid while a day is selected (tap-to-detail), replacing
- * the next-duty card for the duration of the selection. A trip day expands IN PLACE to its
- * legs and a delete control. An empty day shows the add-trip form (AddTripForm) directly —
+/** The card shown below the calendar grid, for the day she has tapped or, until she taps
+ * one, for today. A trip day expands IN PLACE to its legs and a delete control. An empty day shows the add-trip form (AddTripForm) directly —
  * no "Add trip" button and no bottom sheet — remounted (via a key bump) after each successful
  * add so it comes back blank while the parent's refetch flips the card to the trip view. */
 function DayDetailCard({
   isoDate,
   trip,
   homeTz,
+  now,
   layoverRest,
+  nextDuty,
   onAdded,
   onChanged,
   readOnly = false,
@@ -332,6 +336,11 @@ function DayDetailCard({
   isoDate: string;
   trip: TripWithFlights | null;
   homeTz: string;
+  /** Drives the status block's "where is she right now". Passed in rather than read from the
+   * clock here so the card is a pure function of its inputs and testable at a fixed instant. */
+  now: Date;
+  /** Shown on a day with no duty: the one thing the deleted preview card used to answer. */
+  nextDuty?: NextDutySummary | null;
   /** The down-route rest this day falls inside, rendered inside this card rather than beside
    * it: the rest belongs to the flight that created it, and two stacked cards made the day
    * read as two separate things. */
@@ -441,6 +450,14 @@ function DayDetailCard({
         ) : (
           <p className="text-sm text-ink-muted">{humanDateLabel(isoDate, homeTz)} — no duty</p>
         )}
+        {/* "No duty" on its own leaves the obvious question unanswered, and answering it here is
+            what let the read-only preview card go. Only when this day is not itself the next
+            duty's day, or it would repeat the line above. */}
+        {nextDuty && nextDuty.isoDate !== isoDate && (
+          <p data-testid="next-duty-line" className="num text-sm text-ink">
+            Next: {humanDateLabel(nextDuty.isoDate, homeTz)} · {nextDuty.flightNo} · {nextDuty.route}
+          </p>
+        )}
         {/* The day in the middle of a layover: no duty, and the one she is most likely to be
             planning. "No duty" alone is true and useless here. */}
         {layoverRest && <CopyLayoverBrief rest={layoverRest} />}
@@ -482,7 +499,11 @@ function DayDetailCard({
         sky ? "sky" : "bg-card",
       ].join(" ")}
     >
-      {sky && <WeatherField kind={sky.kind} />}
+      {sky && <WeatherField kind={sky.kind} code={sky.day.code} />}
+      {/* The answer first, the detail under it. */}
+      <div className="mb-4">
+        <DutyStatus legs={legs} homeTz={homeTz} now={now} layoverRest={layoverRest} readOnly={readOnly} />
+      </div>
       <TripSummaryLines
         sky={sky}
         legs={legs}
@@ -539,7 +560,11 @@ function DayDetailCard({
         onClick={(e) => {
           if (e.target === deleteDialogRef.current) setConfirmingDelete(false);
         }}
-        className="max-w-[calc(100vw-2rem)] rounded-lg border border-edge bg-card p-5 text-ink backdrop:bg-black/50"
+        // `m-auto` is load-bearing, not spacing. A modal <dialog> is centred by the UA's own
+        // `margin: auto` against `inset: 0`, and Tailwind's Preflight resets `margin: 0` on
+        // every element — which parks it in the top-left corner. Measured at 1200x900 before
+        // the fix: box at 0,0 with `margin: 0px`, `position: fixed`, `inset: 0`.
+        className="m-auto max-w-[calc(100vw-2rem)] rounded-lg border border-edge bg-card p-5 text-ink backdrop:bg-black/50"
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -665,7 +690,9 @@ function DayDetail({
   isoDate,
   trips,
   homeTz,
+  now,
   layoverRest,
+  nextDuty,
   onAdded,
   onChanged,
   readOnly = false,
@@ -673,6 +700,10 @@ function DayDetail({
   isoDate: string;
   trips: TripWithFlights[];
   homeTz: string;
+  /** Threaded down to the status block on each card. */
+  now: Date;
+  /** The next duty not yet flown, for a day that holds none of its own. */
+  nextDuty?: NextDutySummary | null;
   /** The down-route rest this day falls inside, when it does. Belongs to the day rather than to
    * a trip: the middle of a layover has no duty at all, so it cannot hang off a trip card. */
   layoverRest: LayoverRest | null;
@@ -698,7 +729,9 @@ function DayDetail({
           isoDate={isoDate}
           trip={null}
           homeTz={homeTz}
+          now={now}
           layoverRest={layoverRest}
+          nextDuty={nextDuty}
           onAdded={onAdded}
           onChanged={onChanged}
           readOnly={readOnly}
@@ -715,6 +748,7 @@ function DayDetail({
           isoDate={isoDate}
           trip={trip}
           homeTz={homeTz}
+          now={now}
           // First card only: a day with a morning turnaround and an evening standby is two
           // cards, and the rest they share must not be printed on both.
           layoverRest={index === 0 ? layoverRest : null}
@@ -771,11 +805,10 @@ function CalendarSkeleton() {
 }
 
 /** Calendar tab: month grid (trip days marked) + an active-pairing progress card (when a
- * trip spans `now`) + a compact next-duty card. Single tap on any day SELECTS it, showing its
- * detail in place of the next-duty card: a trip day expands to its legs + Edit/Delete, an
- * empty day shows the add-trip form (AddTripForm) inline — no "Add trip" button, no bottom
- * sheet, one tap fewer. There is no second list of the same duties — the grid is the
- * overview, and this card is the detail. */
+ * trip spans `now`) + exactly one day card, for the day she tapped or, until she taps one,
+ * for today. A trip day expands to its legs + Edit/Delete; an empty day shows the add-trip
+ * form (AddTripForm) inline — no "Add trip" button, no bottom sheet, one tap fewer. There is
+ * no second list of the same duties — the grid is the overview, and this card is the detail. */
 export default function CalendarHome({ now, openTodayToken }: Props) {
   const [trips, setTrips] = useState<TripWithFlights[] | null>(null);
   const [selectedIso, setSelectedIso] = useState<string | null>(null);
@@ -867,6 +900,20 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
     trips?.[0]?.flights[0]?.depTz ??
     Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+  // The day the card is about. Nothing picked yet means today — DERIVED, never written into
+  // `selectedIso` by an effect.
+  //
+  // Without a default there was no card at all until she tapped a date, and the first screen
+  // stacked the pairing strip on a `next-duty-card` that was a read-only echo of a day and the
+  // only surface here that could not be edited or deleted. With one, the app opens on the card
+  // a tap would have given her — on a day off too, because the empty-day card names the next
+  // duty itself now.
+  //
+  // The effect that did this instead lost a tap: React flushes passive effects after the
+  // commit, so a tap landing between the roster's paint and that flush was overwritten by
+  // today. A default cannot race a tap — once `selectedIso` is set, it wins.
+  const shownIso = selectedIso ?? localDateKey(now.toISOString(), homeTz);
+
   // Every trip covering a given local calendar date, by checking each trip's away-day span for
   // that date's month against tripDaysInMonth (mirrors TripsCalendar's own per-day lookup so the
   // day card always matches what the grid renders).
@@ -902,25 +949,6 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
     return restForDay(layoverRests(trips, HOME_BASE_IATA), iso, homeTz);
   }
 
-  // The next duty's final destination, resolved here rather than beside the preview card
-  // because it drives a hook and the card sits past two early returns.
-  const previewLastLeg = (() => {
-    if (!trips) return null;
-    const next = trips
-      .flatMap((trip) => trip.flights)
-      .filter((leg) => Date.parse(leg.arrUtc) >= nowMs)
-      .sort((a, b) => Date.parse(a.depUtc) - Date.parse(b.depUtc))[0];
-    if (!next) return null;
-    const owning = trips.find((trip) => trip.flights.some((leg) => leg.id === next.id));
-    const ordered = owning ? [...owning.flights].sort((a, b) => a.legSeq - b.legSeq) : [next];
-    return ordered[ordered.length - 1] ?? null;
-  })();
-  const nextDutySky = useDestinationSky(
-    previewLastLeg?.dest ?? "",
-    previewLastLeg?.arrUtc ?? "",
-    previewLastLeg?.arrTz ?? "UTC",
-  );
-
   // Selects today, or the next trip-free day after today when today already has a trip — used
   // by the tab bar's center + button. Tracks the LAST SEEN token (initialized to the current
   // value, not 0) so a remount with an already-bumped token (e.g. `key` change from an
@@ -955,9 +983,31 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
   const allFlights = trips
     .flatMap((trip) => trip.flights)
     .sort((a, b) => Date.parse(a.reportUtc) - Date.parse(b.reportUtc));
-  const upcoming = allFlights.filter((f) => Date.parse(f.reportUtc) >= nowMs);
+  // "Not landed yet", ordered by report — NOT "report still to come".
+  //
+  // A duty drops out of its own card the moment she reports for it otherwise. On 1 Sept at
+  // 16:46 the app opened on `DXB → CPH · Wed 2 Sept` while she was in the air on EK192, which
+  // had reported at 15:50 and lands at 00:55: the one duty she is actually on was the one the
+  // card refused to show. Filtering on arrival keeps a duty on screen until it is over.
+  const upcoming = allFlights.filter((f) => Date.parse(f.arrUtc) >= nowMs);
   const nextDuty = upcoming[0] ?? null;
   const tripByFlightId = new Map(trips.flatMap((trip) => trip.flights.map((f) => [f.id, trip])));
+
+  // Prepared here because this is where "next" is decided. The route is the whole chain, not the
+  // first leg — DXB → SIN → AKL is one duty and naming only its first sector would misdescribe it.
+  const nextDutySummary: NextDutySummary | null = (() => {
+    if (!nextDuty) return null;
+    const owning = tripByFlightId.get(nextDuty.id);
+    const ordered = owning ? [...owning.flights].sort((a, b) => a.legSeq - b.legSeq) : [nextDuty];
+    const chain = [ordered[0]!.origin, ...ordered.map((l) => l.dest)].filter(
+      (stop, i, all) => i === 0 || stop !== all[i - 1],
+    );
+    return {
+      isoDate: localDateKey(ordered[0]!.depUtc, homeTz),
+      flightNo: ordered[0]!.flightNo,
+      route: chain.join(" → "),
+    };
+  })();
 
   if (!nextDuty) {
     return (
@@ -971,39 +1021,22 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
           optimisticIsoDates={optimisticDays}
           selectedIso={selectedIso}
         />
-        {selectedIso ? (
-          <div className="w-full text-left">
-            <DayDetail
-              isoDate={selectedIso}
-              trips={tripsForDay(selectedIso)}
-              homeTz={homeTz}
-              layoverRest={layoverRestForDay(selectedIso)}
-              onAdded={(iso) => setOptimisticDays((prev) => new Set(prev).add(iso))}
-              onChanged={refetch}
-              readOnly={readOnly}
-            />
-          </div>
-        ) : readOnly ? (
-          <p className="text-center text-ink-muted">Nothing on this roster yet</p>
-        ) : (
-          // trips stays [] until the first add's own refetch resolves - once a day has been
-          // marked optimistically, this "no trips yet" empty state + its CTA would otherwise
-          // stay stale, contradicting what the grid above already shows. In practice the day
-          // is always selected by the time an add happens (the form lives on its detail card),
-          // so this branch never actually races the optimistic mark - kept as a guard anyway.
-          optimisticDays.size === 0 && (
-            <div className="flex flex-col items-center gap-4 text-center">
-              <p className="text-ink-muted">No trips yet — add your first</p>
-              <button
-                type="button"
-                onClick={() => setSelectedIso(localDateKey(now.toISOString(), homeTz))}
-                className="rounded bg-accent px-3 py-2 font-medium text-ground transition-[background-color,transform] duration-[120ms] hover:brightness-110 active:scale-[0.98]"
-              >
-                Add your first trip
-              </button>
-            </div>
-          )
-        )}
+        {/* The "No trips yet — add your first" panel that used to stand here is gone. Its
+            button did one thing, `setSelectedIso(today)`, and today's card is what renders
+            here now — so the panel asked for a tap to reach a screen already on screen, with
+            the flight-number box on it. */}
+        <div className="w-full text-left">
+          <DayDetail
+            isoDate={shownIso}
+            trips={tripsForDay(shownIso)}
+            homeTz={homeTz}
+            now={now}
+            layoverRest={layoverRestForDay(shownIso)}
+            onAdded={(iso) => setOptimisticDays((prev) => new Set(prev).add(iso))}
+            onChanged={refetch}
+            readOnly={readOnly}
+          />
+        </div>
       </div>
     );
   }
@@ -1080,30 +1113,23 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
         </div>
       )}
 
-      {selectedIso ? (
-        <div className="stagger-2">
-          <DayDetail
-            isoDate={selectedIso}
-            trips={tripsForDay(selectedIso)}
-            homeTz={homeTz}
-            layoverRest={layoverRestForDay(selectedIso)}
-            onAdded={(iso) => setOptimisticDays((prev) => new Set(prev).add(iso))}
-            onChanged={refetch}
-            readOnly={readOnly}
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          data-testid="next-duty-card"
-          // Selects the duty's day — this day already has a trip, so its own detail card
-          // (not an add form) is what shows and edits it.
-          onClick={() => setSelectedIso(localDateKey(firstLeg.depUtc, firstLeg.depTz))}
-          className="hairline stagger-2 flex flex-col gap-1 rounded-lg border border-edge bg-card p-4 text-left transition-colors duration-[120ms] hover:bg-raised"
-        >
-          <TripSummaryLines legs={legs} homeTz={homeTz} sky={nextDutySky} showTimeline />
-        </button>
-      )}
+      <div className="stagger-2">
+        {/* Always a day card. The `next-duty-card` that used to stand here when nothing was
+            selected is gone: today is selected on load, and it was the only surface on this
+            screen that could not be edited or deleted — a read-only echo of a day. What it
+            uniquely answered, "when do I fly next", the empty-day card now answers itself. */}
+        <DayDetail
+          isoDate={shownIso}
+          trips={tripsForDay(shownIso)}
+          homeTz={homeTz}
+          now={now}
+          layoverRest={layoverRestForDay(shownIso)}
+          nextDuty={nextDutySummary}
+          onAdded={(iso) => setOptimisticDays((prev) => new Set(prev).add(iso))}
+          onChanged={refetch}
+          readOnly={readOnly}
+        />
+      </div>
     </div>
   );
 }

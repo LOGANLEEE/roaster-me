@@ -90,7 +90,9 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByTestId("tab-calendar")).toBeInTheDocument();
     expect(screen.getByTestId("tab-calendar").className).toContain("text-accent");
-    expect(await screen.findByText(/no trips yet/i)).toBeInTheDocument();
+    // An empty roster lands on today's own day card, not on a "No trips yet" panel — that
+    // panel's button only selected today, which is the card already on screen.
+    expect(await screen.findByTestId("day-detail-card")).toHaveTextContent(/no duty/i);
   });
 
   it("switches views when a tab is clicked", async () => {
