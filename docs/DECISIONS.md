@@ -8,6 +8,46 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-09-01 (the roster she was reading survives a reload)
+
+### Whose calendar is on screen is now persisted, and restored optimistically
+
+`viewingUserId` started at `null` on every mount, so reopening the app snapped back to her own
+calendar even when the whole previous session had been spent following someone else's. Following
+another roster is the entire point of the crew feature, and it was being undone once per launch.
+
+Restored from `localStorage` **before** the crew list lands, deliberately. Waiting for `getCrew`
+would put a round trip in front of every cold start, including the common case of no crew at all.
+The revoked-pairing risk is already handled: a crew read for a dead pairing 404s and `refetch`'s
+catch falls back to her own roster — the same path a mid-session revoke takes, which was already
+tested. A stale id cannot leak anything, because every crew read is authorised server-side against
+the pairing; `CrewBadges` says as much already.
+
+A second guard covers the quieter case: if `getCrew` succeeds and simply does not name the stored
+id, fall back. That also handles a **different account signing in on the same device**, since the
+crew list is fetched for whoever is signed in now — no user-scoped storage key needed.
+
+Switching back to her own roster **clears** the key rather than storing a sentinel, so "never
+chose anyone" and "chose herself" read identically on the way back.
+
+### The test suite had a hidden ordering dependency, and this change exposed it
+
+Two failures appeared that had nothing to do with the feature:
+
+- `localStorage` is shared for a whole test FILE in jsdom, so a test that tapped a crew badge left
+  the next test mounting onto that crew member's roster. It surfaced as
+  `resolveOwn is not a function` — the mount called `getCrewTrips` where the test had stubbed
+  `getTrips`. Fixed by clearing storage in `afterEach`.
+- `vi.mocked(getCrew).mockResolvedValue(...)` replaces the implementation permanently, and
+  `mockClear()` does not undo it. Every test after a crew test inherited a crew member, and the
+  suite only passed because of the order the tests happened to be written in. `afterEach` now
+  restores the module mock's stated default of no crew.
+
+Worth recording because both were pre-existing and neither was anyone's bug until a new test ran
+in a new position. Order-dependent suites pass until they don't.
+
+---
+
 ## 2026-09-01 (the card answers first, and `operating` means what the renderer says it means)
 
 ### The read-only preview card is gone, and so is the empty state that echoed it

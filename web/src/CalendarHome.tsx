@@ -26,6 +26,7 @@ import { calendarSpan } from "./lib/dayMarks";
 import { MIN_LAYOVER_FREE_HOURS } from "./lib/layoverBrief";
 import { useDestinationSky, type Sky } from "./lib/useSky";
 import { HOME_BASE_IATA } from "./lib/homeBase";
+import { getLastRoster, setLastRoster } from "./lib/lastRoster";
 import { layoverRests, restForDay, type LayoverRest } from "./lib/layoverBrief";
 import TripLegsPanel from "./TripLegsPanel";
 import TripsCalendar from "./TripsCalendar";
@@ -817,7 +818,17 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
   const [optimisticDays, setOptimisticDays] = useState<Set<string>>(new Set());
   const [crew, setCrew] = useState<CrewMember[]>([]);
   // null = your own roster; a user id = that crew member's, read-only.
-  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  //
+  // Restored from the last session rather than starting at null. Reopening the app used to snap
+  // back to her own calendar even when she had spent the whole previous session following his,
+  // which is the state the crew feature exists to leave her in.
+  //
+  // Restored OPTIMISTICALLY, before the crew list has landed: waiting for `getCrew` would put a
+  // round trip in front of every cold start, including the common case of no crew at all. If the
+  // pairing has since been revoked the read 404s and `refetch`'s catch already falls back — the
+  // same path a revoke mid-session takes. A stale id cannot leak a roster, because every crew
+  // read is authorised server-side against the pairing.
+  const [viewingUserId, setViewingUserId] = useState<string | null>(() => getLastRoster());
   const nowMs = now.getTime();
   const readOnly = viewingUserId !== null;
 
@@ -838,6 +849,7 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
         // the badge render and the tap): the crew read now 404s forever. Fall back to your own
         // roster and re-read the crew list, rather than sitting on the skeleton.
         setViewingUserId(null);
+        setLastRoster(null);
         setSelectedIso(null);
         getCrew()
           .then((res) => setCrew(res.members))
@@ -848,11 +860,21 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
   }
 
   useEffect(() => {
-    refetch(null);
+    // Whatever was restored above, not unconditionally your own.
+    refetch(viewingUserId);
     // A crew list is the common case of "empty" — this failing is not worth a visible error,
     // it just means no badges.
     getCrew()
-      .then((res) => setCrew(res.members))
+      .then((res) => {
+        setCrew(res.members);
+        // The restored pairing must still exist. A 404 on the roster read is caught in
+        // `refetch`, but a crew list that simply no longer names her is the quieter version of
+        // the same fact — and it is also how a DIFFERENT account signing in on this device
+        // sheds the previous one's id, since the list is fetched for whoever is signed in now.
+        if (viewingUserId !== null && !res.members.some((m) => m.userId === viewingUserId)) {
+          showRosterOf(null);
+        }
+      })
       .catch(() => setCrew([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -862,6 +884,7 @@ export default function CalendarHome({ now, openTodayToken }: Props) {
   function showRosterOf(userId: string | null) {
     if (userId === viewingUserId) return;
     setViewingUserId(userId);
+    setLastRoster(userId);
     setSelectedIso(null);
     setTrips(null);
     refetch(userId);

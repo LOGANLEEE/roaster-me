@@ -89,9 +89,32 @@ test("crew: invite, accept, read each other's roster, and stop sharing", async (
   await expect(b.page.getByTestId("day-detail-card")).toContainText(/no duty/i);
   await expect(b.page.getByTestId("flightno-input")).toHaveCount(0);
 
+  // --- Reopening the app stays on the roster she was reading. ---
+  // Following someone else's month is the whole point of the feature, and it used to be undone
+  // by every launch: `viewingUserId` started at null, so a reload snapped back to her own
+  // calendar. A reload is the closest this suite gets to relaunching the PWA.
+  const aName = new RegExp(a.email.split("@")[0]!, "i");
+  await b.page.reload();
+  await expect(b.page.getByTestId("calendar-grid")).toBeVisible({ timeout: 20_000 });
+  await expect(b.page.getByTestId("crew-badges").getByRole("button", { name: aName })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(b.page.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "false");
+  // Not just the badge: the roster under it is theirs too.
+  await pickCalendarDay(b.page, EK412.pickedDate);
+  await expect(b.page.getByTestId("day-detail-card")).toContainText(EK412.origin);
+
   // Their own roster is still their own, and still editable.
   await b.page.getByTestId("crew-badge-self").click();
   await expect(b.page.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "true");
+
+  // And switching back FORGETS them — otherwise "her own roster" would be a choice she has to
+  // make again on every launch, which is the original bug pointing the other way.
+  await b.page.reload();
+  await expect(b.page.getByTestId("calendar-grid")).toBeVisible({ timeout: 20_000 });
+  await expect(b.page.getByTestId("crew-badge-self")).toHaveAttribute("aria-pressed", "true");
+
   await openAddForm(b.page, EK412.nextFreeDate);
 
   // --- A stops sharing; B loses the badge and the access.
