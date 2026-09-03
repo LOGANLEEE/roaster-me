@@ -23,28 +23,30 @@ test.describe("layout invariants at phone width", () => {
   // the assertions don't depend on spec execution order.
   test.use({ viewport: { width: 390, height: 844 }, storageState: { cookies: [], origins: [] } });
 
-  test("the signed-out landing holds its width and its touch targets at 390px", async ({ page }) => {
-    // The marketing page is the widest thing in the app — a three-column pricing grid — and it
-    // is the first screen anyone ever sees. It collapses to one column below `sm`; this is the
-    // measurement that it actually does, rather than a screenshot that looks about right.
+  test("the signed-out landing explains itself before it asks, at 390px", async ({ page }) => {
+    // This is the first screen anyone ever sees, and until 2026-09-03 it asked for an email
+    // 300px before it said what the app was. The order is the assertion: a unit test renders
+    // the same two elements in either arrangement and cannot tell the difference.
     await page.goto("/");
     await expect(page.getByTestId("landing-pitch")).toBeVisible();
 
-    for (const tier of ["solo", "shared", "crew"]) {
-      await expect(page.getByTestId(`tier-${tier}`)).toBeVisible();
-    }
+    const pitch = await page.getByTestId("landing-pitch").boundingBox();
+    const form = await page.locator("form").first().boundingBox();
+    expect(pitch, "the pitch has no box").not.toBeNull();
+    expect(form, "the sign-in form has no box").not.toBeNull();
+    expect(
+      pitch!.y + pitch!.height,
+      "the pitch must end above the sign-in form starts",
+    ).toBeLessThan(form!.y);
 
     await expectNoHorizontalOverflow(page, "landing");
 
-    // Every plan's call to action is a real touch target, not a text link. The manual-entry
-    // link on the add form was 20px tall for months for exactly this reason.
-    const ctas = page.getByTestId("landing-pricing").getByRole("link");
-    const count = await ctas.count();
-    expect(count).toBe(3);
-    for (let i = 0; i < count; i++) {
-      const box = await ctas.nth(i).boundingBox();
-      expect(box, `plan CTA ${i} has no box`).not.toBeNull();
-      expect(box!.height, `plan CTA ${i} is under 44px`).toBeGreaterThanOrEqual(44);
+    // Both ways in are real touch targets. The manual-entry link on the add form was 20px tall
+    // for months for exactly this reason.
+    for (const name of [/send code/i, /continue with google/i]) {
+      const box = await page.getByRole("button", { name }).boundingBox();
+      expect(box, `${name} has no box`).not.toBeNull();
+      expect(box!.height, `${name} is under 44px`).toBeGreaterThanOrEqual(44);
     }
 
     // The sign-in field is still the narrow column it was, not stretched to the pitch's width.

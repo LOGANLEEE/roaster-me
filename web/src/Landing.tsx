@@ -69,10 +69,20 @@ export default function Landing({
 
   return (
     <div className="entrance flex w-full max-w-3xl flex-col items-center gap-6 text-center">
-      {/* The sign-in column keeps its old narrow measure; only the pitch below is allowed the
-          full width. A 3xl-wide email field would be its own bug. */}
+      {/* Hero and sign-in keep the old narrow measure; only the pitch between them is allowed
+          the full width. A 3xl-wide email field would be its own bug. */}
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
-      <h1 className="stagger-1 text-3xl font-semibold text-ink">danyeowa</h1>
+      <div className="stagger-1 flex flex-col gap-2">
+        <h1 className="text-3xl font-semibold text-ink">danyeowa</h1>
+        {/* Hidden for an invited guest: the panel below already opens with "X shared their
+            roster with you", a better first line than any tagline, and 2026-09-02 recorded
+            that someone who arrived by invitation is not to be sold to. */}
+        {!invite && (
+          <p className="text-lg text-ink-muted">
+            A cabin-crew roster the people at home can read too.
+          </p>
+        )}
+      </div>
 
       {invite ? (
         <div
@@ -131,7 +141,13 @@ export default function Landing({
           </dl>
         </div>
       )}
+      </div>
 
+      {/* Above the form, not below it. The page used to ask for an email 300px before it said
+          what it was. Still skipped for an invited guest, for the reason on the tagline. */}
+      {!invite && <LandingPitch />}
+
+      <div className="flex w-full max-w-sm flex-col items-center gap-6">
       <form
         onSubmit={codeSent ? handleSignIn : handleSendCode}
         className="stagger-3 flex w-full flex-col gap-3 text-left"
@@ -198,10 +214,6 @@ export default function Landing({
 
       <GoogleButton callbackURL={callbackURL} onError={setError} />
       </div>
-
-      {/* Only for a cold visitor. An invited guest arrived because a named person shared a
-          roster with them — answering that with a pricing table would be a worse page. */}
-      {!invite && <LandingPitch />}
     </div>
   );
 }
