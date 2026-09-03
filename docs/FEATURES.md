@@ -58,7 +58,7 @@ codebase to find out. Status words mean exactly one thing:
 | Flight lookup by number | Live | Cache-first from `flight_schedules`, then the provider chain |
 | Multi-leg services | Live | EK247 = DXB→GIG→EZE as two legs of one service |
 | Local harvester | Live | `scripts/fetch-schedules.mjs` — real Chrome, fr24 JSON API, writes prod D1. On cron at :05/:35, working from the live roster |
-| Negative cache for misses | Partial | Still records a miss when the fetch was *blocked*, which poisons a live flight for the TTL |
+| Negative cache for misses | Live | Only an answered `absent` is cached. A blocked or timed-out provider reports `unavailable` and writes nothing — `schedule.ts:237` records a miss on `absent` alone |
 | Live flight status (ETA) | Built | Needs the Mac awake. Real Chrome cookies + automation markers off; see RUNBOOK |
 
 ## Account and sharing
@@ -80,7 +80,7 @@ codebase to find out. Status words mean exactly one thing:
 | Feature | Status | Notes |
 |---|---|---|
 | PWA install | Live | Install button where supported, iOS gets the Share → Add to Home Screen hint |
-| Install nudge banner | **Unmerged** | PR #31 |
+| Install nudge banner | Live | `InstallBanner.tsx`, mounted in `App.tsx` for signed-in users only. Chromium gets the captured `beforeinstallprompt`; iOS Safari, which never fires it, gets the Share → Add to Home Screen hint |
 | Dark / light theme | Live | Semantic tokens only, no raw hex outside `tokens.css` |
 | Zoom disabled app-wide | Live | Requested explicitly; 16px floor on controls is what actually fixes the iOS layout bug |
 | Offline / service worker | Built | Push delivery depends on it |

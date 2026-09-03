@@ -284,10 +284,15 @@ vouch for times on a leg she was not on. `scheduleLegSeq` is never re-indexed.
 - **KIPRIS trademark check for 다녀와 is unverified.** The search page is a JS SPA; a scrape
   returned zero results, which is indistinguishable from the query never running. Matters only if
   the mark is ever filed — the domain itself is fine.
-- **Cloudflare Email Sending needs Workers Paid ($5/mo).** Both accounts are on Workers Free
-  (checked). Revisit only if Resend's free tier stops fitting; the native `send_email` binding is
-  nicer (no API key) but not worth $60/yr at this volume.
-- **Stale worktrees and branches** — `roster-me-worktrees/{designer,developer,planner,tester}`
-  (all at 27e4df5, 8 months old, clean), a prunable `~/.cursor/worktrees/roaster-me/myk`, and
-  merged branches `fix/flightno-normalisation`, `fix/scroll-expand-polish`. Left alone on purpose;
-  delete only on the user's say-so.
+- ~~**Cloudflare Email Sending needs Workers Paid ($5/mo).**~~ **Closed 2026-09-02 — not doing.**
+  Resend covers both sends on its free tier and nothing has stopped fitting. Google-only sign-in
+  was raised as a way to drop mail entirely; it cannot. `worker/src/email.ts` has two send sites,
+  and only one of them is a sign-in: `sendOtpEmail` (`auth.ts:5`) and `sendCrewInviteEmail`
+  (`crew.ts:6`). The invite goes to someone who has no account yet, so no OAuth provider can
+  deliver it. Dropping OTP would also break local dev, every PR preview (Google needs exact
+  redirect URIs, and each preview is a new hostname) and all of e2e, which signs in through
+  `e2e/helpers.ts`.
+- **Stale worktrees and branches** — re-measured 2026-09-02: `git worktree list` shows only the
+  repo itself, so the `roster-me-worktrees/*` four and the `~/.cursor` one named here are already
+  gone. What is left is one merged local branch, `fix/drop-the-duplicate-board`, plus merged
+  branches on origin. Left alone on purpose; delete only on the user's say-so.
