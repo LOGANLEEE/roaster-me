@@ -8,6 +8,56 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-09-03 (the landing page explains itself before it asks)
+
+### The page asked for an email 300px before it said what it was
+
+Measured at 390x844 before the change: the email input sat at y=293, and the first sentence
+explaining what the app is began at y≈700 — below the fold, along with all of its body text. The
+only heading above it was the wordmark. A cold visitor was asked to act before being told what
+they were acting on.
+
+`LandingPitch` now renders BETWEEN the hero and the sign-in form rather than under it. The hero
+gains one line — *"A cabin-crew roster the people at home can read too."* Both are skipped on the
+invite branch, unchanged from yesterday's reasoning: someone who arrived because a named person
+shared a roster with them already has a better first line than any tagline.
+
+**The tagline is not the line the audience card uses.** The first draft read "Where she is, and
+when she is back", which is the second card's "When she is back, and where she is now" reversed —
+two near-identical sentences 600px apart on one screen. It read as a duplication bug rather than
+emphasis, and only became visible once rendered.
+
+**Order is asserted in two places, at the level each can actually see.**
+`web/src/Landing.test.tsx` uses `compareDocumentPosition`, which is the only thing in jsdom that
+tells the two arrangements apart; `e2e/layout.spec.ts` asserts the geometry in a real engine.
+Both were proven failing-first by moving the pitch back below the form — the e2e reported pitch
+bottom `1188.5` against form top `376.1`.
+
+### The pricing table is gone until something charges
+
+Three tiers ran to 1098px — **46% of a 2367px page** — advertising prices the block itself
+admitted were not live. Nothing on the page charged anything, so the whole thing was speculative
+weight on the one screen that has to do two jobs: explain, and let someone in. Page height at
+390px is now 1197px, from 2367px.
+
+What went: `TIERS`, `Check()`, the pricing section, its `landing-pricing` and `tier-*` testids,
+and the three `#landing-email` anchors. The shape it claimed — a free tier genuinely usable
+alone, with payment attached to SHARING, because that is the part that costs a push subscription
+and a second person's reads — is recorded in the 2026-09-02 entry below and costs nothing to
+rebuild.
+
+**Rejected: a separate marketing page at `/`, with sign-in moved to `/app`.** There is no channel
+sending anyone to it — today's users arrive by invite, which skips marketing entirely — and
+`App.tsx` hand-rolls routing with a single `pathname.startsWith` check, no router and no SSR. A
+marketing route in this SPA serves an empty `#root` to a crawler, so it would not have bought the
+SEO that is the only reason to want it. Split it when a channel exists, and prerender it then.
+
+**Not addressed:** in dark mode the departure board (`#0b0d12`) sits close to the page ground
+(`#15171c`), so the "physical airport board" contrast that works in light mode is nearly gone.
+Named here so it is not rediscovered as new.
+
+---
+
 ## 2026-09-02 (two flights in one day was never impossible, and a landing page that says so)
 
 ### The crew member's own account, and what it cost
