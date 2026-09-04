@@ -73,7 +73,21 @@ export default function Landing({
   return (
     <div className="entrance flex w-full max-w-sm flex-col items-center gap-6 text-center">
       <div className="stagger-1 flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold text-ink">danyeowa</h1>
+        {/* The wordmark is the way back to the pitch, since `/signin` carries nothing else that
+            explains the app. NOT a link for an invited guest: `/` would take them away from the
+            invitation they arrived on, and the token is not in the path they would land on. */}
+        <h1 className="text-3xl font-semibold text-ink">
+          {invite ? (
+            "danyeowa"
+          ) : (
+            <a
+              href="/"
+              className="inline-flex min-h-[44px] items-center transition-colors duration-[120ms] hover:text-accent"
+            >
+              danyeowa
+            </a>
+          )}
+        </h1>
         {/* Hidden for an invited guest: the panel below already opens with "X shared their
             roster with you", a better first line than any tagline, and 2026-09-02 recorded
             that someone who arrived by invitation is not to be sold to. */}

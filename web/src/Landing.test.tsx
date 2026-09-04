@@ -50,6 +50,24 @@ describe("Landing", () => {
       .not.toBeInTheDocument();
   });
 
+  it("sends the wordmark back to the pitch, except for an invited guest", () => {
+    const { unmount } = render(<Landing onSignedIn={() => {}} />);
+    // `/signin` carries no other explanation of what the app is, so the wordmark is the way back.
+    expect(screen.getByRole("link", { name: /danyeowa/i })).toHaveAttribute("href", "/");
+    unmount();
+
+    render(
+      <Landing
+        onSignedIn={() => {}}
+        invite={{ fromName: "Isis", toEmailMasked: "k\u2022\u2022\u202294@gmail.com" }}
+      />,
+    );
+    // `/` would take them away from the invitation they arrived on, and the token is not in the
+    // path they would land on.
+    expect(screen.queryByRole("link", { name: /danyeowa/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /danyeowa/i, level: 1 })).toBeInTheDocument();
+  });
+
   it("shows the email field (and no separate login screen) up front", () => {
     render(<Landing onSignedIn={() => {}} />);
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
