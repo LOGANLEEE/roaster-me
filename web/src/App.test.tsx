@@ -66,16 +66,36 @@ describe("App", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows title, API status, and the inline sign-in form (one surface, no login screen) when signed out", async () => {
+  it("shows the marketing page, and no form, at / when signed out", async () => {
     stubSignedOutFetch();
     render(<App />);
-    // Exactly one h1 on the page — the Landing hero — no duplicate with the header chrome.
-    // Awaited: the boot splash holds the screen (and owns no h1) until /api/me answers.
+    // Exactly one h1 on the page — Marketing's own masthead — no duplicate with the header
+    // chrome. Awaited: the boot splash holds the screen (and owns no h1) until /api/me answers.
     expect(await screen.findAllByRole("heading", { name: /danyeowa/i, level: 1 })).toHaveLength(1);
     expect(await screen.findByText(/api: online/i)).toBeInTheDocument();
-    // Email is visible up front, no separate CTA/navigation needed to reach it.
-    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.getByTestId("marketing")).toBeInTheDocument();
+    // The form lives on /signin now. Asking for an email before saying what the app is was the
+    // order this split exists to fix.
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the sign-in form, and no marketing, at /signin when signed out", async () => {
+    window.history.pushState({}, "", "/signin");
+    stubSignedOutFetch();
+    render(<App />);
+    expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send code/i })).toBeInTheDocument();
+    // A returning user came here to sign in, not to be sold to.
+    expect(screen.queryByTestId("marketing")).not.toBeInTheDocument();
+  });
+
+  it("drops /signin from the URL once the session is real", async () => {
+    window.history.pushState({}, "", "/signin");
+    stubSignedInFetch();
+    render(<App />);
+    await screen.findByTestId("tab-calendar");
+    // Otherwise the next reload puts them back on a sign-in form they no longer need.
+    expect(window.location.pathname).toBe("/");
   });
 
   it("hides the tab bar when signed out", async () => {

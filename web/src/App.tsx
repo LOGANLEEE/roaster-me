@@ -5,12 +5,18 @@ import CalendarHome from "./CalendarHome";
 import InviteLanding from "./InviteLanding";
 import InstallBanner from "./InstallBanner";
 import Landing from "./Landing";
+import Marketing from "./Marketing";
 import SettingsView from "./SettingsView";
 import CrewPanel from "./CrewPanel";
 import TabBar from "./TabBar";
 import type { TabName } from "./TabBar";
 
 const INVITE_PATH_PREFIX = "/invite/";
+/** The sign-in surface's own route. `/` is the marketing page for a signed-out visitor, so the
+ * form needs somewhere to live that a returning user can reach without scrolling a pitch.
+ * `wrangler.jsonc` sets `not_found_handling: "single-page-application"`, so this path is served
+ * `index.html` with no configuration change. */
+const SIGNIN_PATH = "/signin";
 
 /** Extracts the token from `/invite/:token`, or null when this isn't an invite link.
  *
@@ -54,6 +60,19 @@ function SignedInApp() {
   // fired by the tab bar's center + button, from any tab.
   const [openTodayToken, setOpenTodayToken] = useState(0);
   const [now, setNow] = useState(() => new Date());
+  // Read once per render, not stored: there is no router, so a move between `/` and `/signin`
+  // is a full navigation and this component mounts fresh on the other side.
+  const isSignInRoute = location.pathname === SIGNIN_PATH;
+
+  // Someone who signs in on `/signin` should not keep that path in their history — the next
+  // reload would put them back on a sign-in form they no longer need. replaceState rather than
+  // a redirect: the app is already rendering, and a navigation would throw away the session
+  // fetch that just completed.
+  useEffect(() => {
+    if (me !== null && me !== "loading" && isSignInRoute) {
+      window.history.replaceState({}, "", "/");
+    }
+  }, [me, isSignInRoute]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -114,7 +133,11 @@ function SignedInApp() {
         {isSignedIn && <InstallBanner />}
 
         {me === null ? (
-          <Landing onSignedIn={loadMe} />
+          isSignInRoute ? (
+            <Landing onSignedIn={loadMe} />
+          ) : (
+            <Marketing />
+          )
         ) : activeTab === "share" ? (
           <CrewPanel />
         ) : activeTab === "settings" ? (

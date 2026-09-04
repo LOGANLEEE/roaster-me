@@ -79,6 +79,7 @@ codebase to find out. Status words mean exactly one thing:
 
 | Feature | Status | Notes |
 |---|---|---|
+| Marketing page and sign-in are separate routes | Unmerged | `/` explains the app to a cold visitor and carries no form; `/signin` is the OTP surface; `/invite/:token` unchanged. They were one page until 2026-09-04, and adding the content the pitch needed pushed the email field to the bottom of a 2670px page at 390px. Routing is one `pathname === "/signin"` check — no router. `SoftwareApplication` JSON-LD ships in `index.html`; prerendering `/` for non-JS crawlers is NOT in this change |
 | PWA install | Live | Install button where supported, iOS gets the Share → Add to Home Screen hint |
 | Install nudge banner | Live | `InstallBanner.tsx`, mounted in `App.tsx` for signed-in users only. Chromium gets the captured `beforeinstallprompt`; iOS Safari, which never fires it, gets the Share → Add to Home Screen hint |
 | Dark / light theme | Live | Semantic tokens only, no raw hex outside `tokens.css` |

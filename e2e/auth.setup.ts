@@ -10,9 +10,10 @@ import { AUTH_FILE } from "./playwright.config";
  * project's `use.storageState` — so autofill.spec.ts, roster.spec.ts, and share.spec.ts all
  * start already signed in, with zero further OTP sends between them.
  *
- * This is where the suite's ONLY assertion of the real sign-in UI walk (landing page's inline
- * email OTP form -> verified, no separate login screen) now lives; it used to be duplicated at
- * the top of roster.spec.ts's test, which called `signInThroughUi` itself.
+ * This is where the suite's ONLY assertion of the real sign-in UI walk (`/signin`'s inline
+ * email OTP form -> verified, with the code field appearing on the same surface) now lives; it
+ * used to be duplicated at the top of roster.spec.ts's test, which called `signInThroughUi`
+ * itself.
  *
  * Unlike storageState (a client-side snapshot Playwright re-reads fresh per test file),
  * better-auth's session is server-backed: calling sign-out from ANY spec deletes the shared
@@ -28,8 +29,12 @@ import { AUTH_FILE } from "./playwright.config";
  */
 setup("authenticate", async ({ page }) => {
   await page.goto("/");
+  // Exactly one h1, which is the real invariant here: App.tsx skips its own chrome header on a
+  // signed-out screen so the page heading is not announced twice. This used to assert zero
+  // `<header>` elements as a proxy, which stopped meaning that on 2026-09-04 — Marketing owns a
+  // real masthead `<header>` of its own, and the h1 count is what actually mattered.
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: /danyeowa/i, level: 1 })).toBeVisible();
-  await expect(page.locator("header")).toHaveCount(0);
 
   await signInThroughUi(page, E2E_EMAIL);
 

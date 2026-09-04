@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { InvitePreview } from "@danyeowa/shared";
 import { authClient } from "./auth-client";
 import GoogleButton from "./GoogleButton";
-import LandingPitch from "./LandingPitch";
 
 type Props = {
   onSignedIn: () => void;
@@ -16,10 +15,14 @@ type Props = {
   callbackURL?: string;
 };
 
-/** Single-surface signed-out screen: wordmark, a static "next duty" departure-board sample,
- * and the sign-in form inline beneath it. There is no separate login screen to navigate to —
- * the email step and the OTP-code step live on this one surface, the code field simply
- * appearing under the email field once a code has been sent. */
+/** The sign-in surface, served at `/signin` and reused by `InviteLanding`: wordmark, a static
+ * "next duty" departure-board sample, and the OTP form beneath it. The email step and the
+ * code step live on this one surface — the code field simply appears under the email field
+ * once a code has been sent.
+ *
+ * The marketing pitch that used to sit in the middle of this screen now has its own route
+ * (`Marketing.tsx` at `/`). It left because the two jobs want opposite lengths: explaining the
+ * app wants room, and signing in wants the form above the fold. Whichever went second lost. */
 export default function Landing({
   onSignedIn,
   invite,
@@ -68,10 +71,7 @@ export default function Landing({
   }
 
   return (
-    <div className="entrance flex w-full max-w-3xl flex-col items-center gap-6 text-center">
-      {/* Hero and sign-in keep the old narrow measure; only the pitch between them is allowed
-          the full width. A 3xl-wide email field would be its own bug. */}
-      <div className="flex w-full max-w-sm flex-col items-center gap-6">
+    <div className="entrance flex w-full max-w-sm flex-col items-center gap-6 text-center">
       <div className="stagger-1 flex flex-col gap-2">
         <h1 className="text-3xl font-semibold text-ink">danyeowa</h1>
         {/* Hidden for an invited guest: the panel below already opens with "X shared their
@@ -141,13 +141,6 @@ export default function Landing({
           </dl>
         </div>
       )}
-      </div>
-
-      {/* Above the form, not below it. The page used to ask for an email 300px before it said
-          what it was. Still skipped for an invited guest, for the reason on the tagline. */}
-      {!invite && <LandingPitch />}
-
-      <div className="flex w-full max-w-sm flex-col items-center gap-6">
       <form
         onSubmit={codeSent ? handleSignIn : handleSendCode}
         className="stagger-3 flex w-full flex-col gap-3 text-left"
@@ -213,7 +206,6 @@ export default function Landing({
       </div>
 
       <GoogleButton callbackURL={callbackURL} onError={setError} />
-      </div>
     </div>
   );
 }
