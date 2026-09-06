@@ -23,35 +23,52 @@ test.describe("layout invariants at phone width", () => {
   // the assertions don't depend on spec execution order.
   test.use({ viewport: { width: 390, height: 844 }, storageState: { cookies: [], origins: [] } });
 
-  test("the signed-out landing explains itself before it asks, at 390px", async ({ page }) => {
-    // This is the first screen anyone ever sees, and until 2026-09-03 it asked for an email
-    // 300px before it said what the app was. The order is the assertion: a unit test renders
-    // the same two elements in either arrangement and cannot tell the difference.
+  test("/ is the pitch and carries no form, at 390px", async ({ page }) => {
+    // Until 2026-09-03 this screen asked for an email 300px before it said what the app was.
+    // The fix put the pitch first, which pushed the form to the bottom of a 2670px page. The
+    // split is what resolves it: `/` explains, `/signin` asks, and neither is second.
     await page.goto("/");
-    await expect(page.getByTestId("landing-pitch")).toBeVisible();
+    await expect(page.getByTestId("marketing")).toBeVisible();
+    await expect(page.locator("form")).toHaveCount(0);
 
-    const pitch = await page.getByTestId("landing-pitch").boundingBox();
-    const form = await page.locator("form").first().boundingBox();
-    expect(pitch, "the pitch has no box").not.toBeNull();
-    expect(form, "the sign-in form has no box").not.toBeNull();
-    expect(
-      pitch!.y + pitch!.height,
-      "the pitch must end above the sign-in form starts",
-    ).toBeLessThan(form!.y);
+    await expectNoHorizontalOverflow(page, "marketing");
+    await expectNoTinyControls(page, "marketing");
 
-    await expectNoHorizontalOverflow(page, "landing");
-
-    // Both ways in are real touch targets. The manual-entry link on the add form was 20px tall
-    // for months for exactly this reason.
-    for (const name of [/send code/i, /continue with google/i]) {
-      const box = await page.getByRole("button", { name }).boundingBox();
-      expect(box, `${name} has no box`).not.toBeNull();
-      expect(box!.height, `${name} is under 44px`).toBeGreaterThanOrEqual(44);
+    // Both CTAs are real touch targets. The manual-entry link on the add form was 20px tall for
+    // months for exactly this reason.
+    const ctas = page.getByRole("link", { name: /get started/i });
+    const count = await ctas.count();
+    expect(count, "marketing has no call to action").toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const box = await ctas.nth(i).boundingBox();
+      expect(box, `CTA ${i} has no box`).not.toBeNull();
+      expect(box!.height, `CTA ${i} is under 44px`).toBeGreaterThanOrEqual(44);
     }
+  });
 
-    // The sign-in field is still the narrow column it was, not stretched to the pitch's width.
-    const email = await page.getByLabel(/email/i).boundingBox();
-    expect(email!.width).toBeLessThan(390);
+  test("/signin puts the form above the fold at 390px", async ({ page }) => {
+    // The whole point of the split, and the one assertion that fails on the pre-split page:
+    // there, the four content blocks pushed the email field to y~2200 on a 844px-tall screen.
+    await page.goto("/signin");
+    const email = page.getByLabel(/email/i);
+    await expect(email).toBeVisible();
+
+    const box = await email.boundingBox();
+    expect(box, "the email field has no box").not.toBeNull();
+    expect(box!.y, "the email field must be reachable without scrolling").toBeLessThan(844);
+    // Still the narrow column, not stretched to the full page width.
+    expect(box!.width).toBeLessThan(390);
+
+    await expectNoHorizontalOverflow(page, "signin");
+    // A control under 16px makes iOS zoom on focus and wrecks the layout. Note a Tailwind
+    // `text-sm` on an input beats the global 16px floor in tokens.css.
+    await expectNoTinyControls(page, "signin");
+
+    for (const name of [/send code/i, /continue with google/i]) {
+      const b = await page.getByRole("button", { name }).boundingBox();
+      expect(b, `${name} has no box`).not.toBeNull();
+      expect(b!.height, `${name} is under 44px`).toBeGreaterThanOrEqual(44);
+    }
   });
 
   test("calendar matches its container width, nothing overflows, no control is under 16px", async ({

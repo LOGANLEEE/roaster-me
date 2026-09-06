@@ -26,23 +26,19 @@ describe("Landing", () => {
     expect(screen.getByText(/dxb.*akl/i)).toBeInTheDocument();
   });
 
-  // Both branches of the two `!invite` guards in Landing. The pitch and the tagline are the
-  // cold visitor's only explanation of what this is, and 2026-09-02 recorded that an invited
-  // guest must not be sold to — they arrived because a named person shared a roster with them.
-  it("explains itself to a cold visitor, before the sign-in form", () => {
+  // The pitch moved to Marketing.tsx at `/` on 2026-09-04; this surface is sign-in only, so
+  // the tagline is all the explanation it carries.
+  it("carries the tagline but no marketing pitch", () => {
     render(<Landing onSignedIn={() => {}} />);
-    const pitch = screen.getByTestId("landing-pitch");
-    expect(pitch).toBeInTheDocument();
     expect(screen.getByText(/a cabin-crew roster the people at home can read too/i))
       .toBeInTheDocument();
-
-    // Order, not just presence. compareDocumentPosition is the only thing in jsdom that can
-    // tell the two arrangements apart; the geometry itself is asserted in e2e/layout.spec.ts.
-    const form = document.querySelector("form")!;
-    expect(pitch.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId("marketing")).not.toBeInTheDocument();
+    expect(screen.queryByText(/the roster is written for the airline/i)).not.toBeInTheDocument();
   });
 
-  it("drops the pitch and the tagline for someone arriving on an invite", () => {
+  // 2026-09-02 recorded that an invited guest must not be sold to — they arrived because a
+  // named person shared a roster with them, which beats any tagline.
+  it("drops the tagline for someone arriving on an invite", () => {
     render(
       <Landing
         onSignedIn={() => {}}
@@ -50,9 +46,26 @@ describe("Landing", () => {
       />,
     );
     expect(screen.getByText(/isis shared their roster with you/i)).toBeInTheDocument();
-    expect(screen.queryByTestId("landing-pitch")).not.toBeInTheDocument();
     expect(screen.queryByText(/a cabin-crew roster the people at home can read too/i))
       .not.toBeInTheDocument();
+  });
+
+  it("sends the wordmark back to the pitch, except for an invited guest", () => {
+    const { unmount } = render(<Landing onSignedIn={() => {}} />);
+    // `/signin` carries no other explanation of what the app is, so the wordmark is the way back.
+    expect(screen.getByRole("link", { name: /danyeowa/i })).toHaveAttribute("href", "/");
+    unmount();
+
+    render(
+      <Landing
+        onSignedIn={() => {}}
+        invite={{ fromName: "Isis", toEmailMasked: "k\u2022\u2022\u202294@gmail.com" }}
+      />,
+    );
+    // `/` would take them away from the invitation they arrived on, and the token is not in the
+    // path they would land on.
+    expect(screen.queryByRole("link", { name: /danyeowa/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /danyeowa/i, level: 1 })).toBeInTheDocument();
   });
 
   it("shows the email field (and no separate login screen) up front", () => {

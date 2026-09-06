@@ -149,13 +149,14 @@ async function fetchLastOtp(page: Page, email: string): Promise<string> {
   return body.otp;
 }
 
-/** Drives the full landing -> email OTP sign-in flow via the real UI. The email field is on
- * the landing surface itself (no separate login screen/CTA to navigate through first). */
+/** Drives the full email OTP sign-in flow via the real UI, straight at `/signin`. The marketing
+ * page at `/` carries no form since 2026-09-04; going through its CTA would just add a
+ * navigation to every spec that signs in. */
 export async function signInThroughUi(
   page: Page,
   email = E2E_EMAIL,
 ): Promise<void> {
-  await page.goto("/");
+  await page.goto("/signin");
   await page.getByLabel(/email/i).fill(email);
   await page.getByRole("button", { name: /send code/i }).click();
 

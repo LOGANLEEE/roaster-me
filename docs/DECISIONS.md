@@ -8,6 +8,96 @@ obviously better until you know what's underneath it.
 
 ---
 
+## 2026-09-04 (the page that sells is not the page that asks)
+
+### Reversing yesterday's rejection of a marketing/sign-in split
+
+The 2026-09-03 entry below rejected "a separate marketing page at `/`, with sign-in moved to
+`/app`". That rejection is now overturned, and it is worth being exact about why, because its
+reasoning was not wrong so much as answering a different question.
+
+It argued the split entirely from SEO: no channel sends anyone to `/`, and a marketing route in
+this SPA serves an empty `#root` to a crawler, "so it would not have bought the SEO that is the
+only reason to want it."
+
+**SEO was never the reason.** The reason is the returning user, and yesterday's entry could not
+have seen it, because the page it was reasoning about did not exist yet. Putting the pitch above
+the form fixed the cold visitor and created a new problem for everyone else: measured at 390px in
+`.design/` mockup renders on 2026-09-04, adding the four content blocks this page actually needs
+takes it from 1197px to 2670px, with the form at the bottom. A crew member signed out on a new
+device would scroll a full marketing pitch to reach a field that used to sit at y=293.
+
+Once explaining and asking share one surface, one of them is second, and neither audience
+tolerates being second. That is what the split resolves, and it has nothing to do with crawlers.
+
+### `/` is the pitch, `/signin` is the form
+
+`Marketing.tsx` at `/`, `Landing.tsx` at `/signin`, `InviteLanding` at `/invite/:token`
+unchanged. Routing stays hand-rolled: one `pathname === "/signin"` comparison beside the existing
+`pathname.startsWith("/invite/")` check. No router, no dependency.
+
+`wrangler.jsonc` already sets `not_found_handling: "single-page-application"`, so `/signin` is
+served `index.html` with no configuration change. This was the routing objection in yesterday's
+entry, and it prices at about five lines.
+
+Signing in on `/signin` does a `history.replaceState` back to `/`, so a reload does not return a
+signed-in user to a sign-in form.
+
+### The SEO argument inverted, and it now points the other way
+
+Not the reason for the split, but worth recording since the entry below asserts the opposite.
+Googlebot executes JavaScript and indexes SPA content on a second-pass render, so the empty
+`#root` costs less with Google than that entry assumed. The crawlers that do *not* execute
+JavaScript — GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot — are the ones growing in
+importance, and for them the page is nothing.
+
+Verified 2026-09-04: `curl https://danyeowa.com/` returned 8057 bytes whose only text, with tags
+stripped, was the title and the meta description. Zero body copy.
+
+**Not verified:** which crawlers actually request `danyeowa.com`, and whether each executes
+JavaScript. That is a claim about bot behaviour, not a measurement of this site. Cloudflare's bot
+analytics answers the first half, and should be checked before anyone treats this as
+load-bearing.
+
+`SoftwareApplication` JSON-LD now sits in `web/index.html`. It is static markup, so it reaches
+every crawler without the split or a prerender. No `offers` and no `aggregateRating` — nothing
+charges and nobody has rated this, and inventing either is the class of claim `FEATURES.md`
+exists to prevent.
+
+Prerendering `/` is deliberately a separate change. It touches the build, and the deploy job
+verifies against `web/dist/assets/index-*.js`; that risk should not ride along with a UI change.
+Spec at `.design/2026-09-04-landing-split.md`.
+
+### Copy that came off the page
+
+"When she is back, and where she is now" is gone. It told half the people this is for that it is
+not for them. `Marketing.test.tsx` asserts no `she`/`her`/`hers` survives in the rendered text —
+mutated by restoring the old line, which failed.
+
+The free tier now reads "Nothing to buy. If that ever changes it will be for sharing, never for
+your own roster", rather than "there is nothing to buy". The 2026-09-02 entry records payment
+attaching to SHARING, so the flat version becomes a bait the day anything charges; this one stays
+true either way.
+
+### An assertion that was a proxy for something else
+
+`e2e/auth.setup.ts` asserted `page.locator("header")` had count 0 on the signed-out screen. The
+invariant it stood for is *exactly one h1* — App.tsx skips its own chrome header there so the
+page heading is not announced twice. `Marketing` owns a real masthead `<header>`, which is
+correct semantics, and the proxy assertion failed while the invariant held. It now asserts the
+h1 count directly.
+
+### Deliberately unchanged
+
+The API-status footer ("API: online") still renders under the signed-out screen, which now means
+it renders under a public marketing page. It is a debug readout and looks like one. Left alone
+rather than widening this change; named here so it is not rediscovered as new.
+
+The dark-mode board contrast problem recorded on 2026-09-03 is still open. This change moves the
+board onto a second page without fixing it.
+
+---
+
 ## 2026-09-03 (the landing page explains itself before it asks)
 
 ### The page asked for an email 300px before it said what it was

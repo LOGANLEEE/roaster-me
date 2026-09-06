@@ -88,8 +88,10 @@ test("delete account: confirm by typing the address, and the roster goes with it
   await expect(confirm).toBeEnabled();
   await confirm.click();
 
-  // Back to the signed-out screen.
-  await expect(page.getByLabel(/email/i)).toBeVisible({ timeout: 20_000 });
+  // Back to the signed-out screen, which since 2026-09-04 is the marketing page at `/` rather
+  // than a form — deleting an account should not immediately present a way to make a new one.
+  await expect(page.getByTestId("marketing")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel(/email/i)).toHaveCount(0);
 
   // The account is gone, not just logged out: the cookie no longer opens anything.
   expect((await page.request.get("/api/trips")).status()).toBe(401);

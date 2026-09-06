@@ -15,6 +15,26 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>danyeowa</title>
+    <!-- Machine-readable description of the app. This sits in the raw HTML, so it reaches the
+         crawlers that never execute the bundle — GPTBot, ClaudeBot, PerplexityBot and the rest
+         of the AI-search readers, for which a JS-rendered #root is empty. Verified 2026-09-04:
+         `curl https://danyeowa.com/` returned 8057 bytes whose only text was the title and the
+         meta description above.
+
+         No `offers` and no `aggregateRating`. Nothing charges and nobody has rated this; both
+         fields would be claims the app cannot support, which is the class of thing
+         docs/FEATURES.md exists to prevent. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "danyeowa",
+        "url": "https://danyeowa.com/",
+        "applicationCategory": "TravelApplication",
+        "operatingSystem": "Any (progressive web app)",
+        "description": "A cabin-crew roster the people at home can read too. Enter a flight number and the schedule fills itself in \u2014 route, departure, the landing day, and the free hours between landing and the next report. Invite one person and they can read your calendar."
+      }
+    </script>
     <style>
       html,
       body {
